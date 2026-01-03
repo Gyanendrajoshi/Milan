@@ -3,12 +3,15 @@ import { ProcessMaster } from "@/types/process-master";
 const STORAGE_KEY = "MILAN_PROCESSES";
 
 const DEFAULT_PROCESSES: ProcessMaster[] = [
-    { id: "P001", name: "Printing", type: "PRINTING", rateType: "Rate/Color", rate: 500, status: "Active" },
-    { id: "P002", name: "Lamination", type: "LAMINATION", rateType: "Rate/Sq.Meter", rate: 5, status: "Active" },
-    { id: "P003", name: "Die Cutting", type: "DIE CUTTING", rateType: "Rate/1000 Units", rate: 150, status: "Active" },
-    { id: "P004", name: "Slitting", type: "SLITTING", rateType: "Rate/Kg", rate: 10, status: "Active" },
-    { id: "P005", name: "Pasting", type: "PASTING", rateType: "Rate/1000 Units", rate: 200, status: "Active" }
-] as any;
+    { id: "P001", code: "PM00001", name: "Printing - Flexo", chargeType: "rate_per_kg", isUnitConversion: false, rate: 45, setupCharges: 0 },
+    { id: "P002", code: "PM00002", name: "Printing - Rotogravure", chargeType: "rate_per_kg", isUnitConversion: false, rate: 55, setupCharges: 0 },
+    { id: "P003", code: "PM00003", name: "Lamination - Solvent Based", chargeType: "rate_per_kg", isUnitConversion: false, rate: 35, setupCharges: 0 },
+    { id: "P004", code: "PM00004", name: "Lamination - Solventless", chargeType: "rate_per_kg", isUnitConversion: false, rate: 40, setupCharges: 0 },
+    { id: "P005", code: "PM00005", name: "Slitting", chargeType: "rate_per_kg", isUnitConversion: false, rate: 800, setupCharges: 0 },
+    { id: "P006", code: "PM00006", name: "Pouching", chargeType: "rate_per_1000_units", isUnitConversion: false, rate: 150, setupCharges: 0 },
+    { id: "P007", code: "PM00007", name: "Die Cutting", chargeType: "rate_per_1000_units", isUnitConversion: false, rate: 200, setupCharges: 0 },
+    { id: "P008", code: "PM00008", name: "Pasting", chargeType: "rate_per_1000_units", isUnitConversion: false, rate: 100, setupCharges: 0 }
+];
 
 export const processStorage = {
     getAll: (): ProcessMaster[] => {

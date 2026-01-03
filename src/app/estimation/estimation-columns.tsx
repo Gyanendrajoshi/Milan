@@ -14,14 +14,16 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 // Define the type for the Estimation Table Row matching user request
-export type Estimation = {
+// Extended to include all form fields for proper save/edit cycle
+import { EstimationFormValues } from "@/types/estimation"
+
+export type Estimation = EstimationFormValues & {
     id: string // Internal ID
     jobCardNo: string // Display ID
-    jobName: string
     client: string
-    clientId?: string // Added for Dispatch Module compatibility
-    quantity: number
-    deliveryDate: string
+    clientId: string // For compatibility
+    quantity: number // Alias for orderQty (backward compatibility)
+    deliveryDate: string // String format for display
     status: string
 }
 

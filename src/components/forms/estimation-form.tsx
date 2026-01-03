@@ -58,6 +58,12 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
     const [rollDialogOpen, setRollDialogOpen] = useState(false);
     const [processDialogOpen, setProcessDialogOpen] = useState(false);
 
+    // Dialog Key States (for forcing re-mount on re-open)
+    const [toolDialogKey, setToolDialogKey] = useState(0);
+    const [dieDialogKey, setDieDialogKey] = useState(0);
+    const [rollDialogKey, setRollDialogKey] = useState(0);
+    const [processDialogKey, setProcessDialogKey] = useState(0);
+
     // Flow State
     const [isJobDetailsVisible, setIsJobDetailsVisible] = useState(false);
     const [mobileStep, setMobileStep] = useState(1); // 1: Basic, 2: Details, 3: Costing
@@ -563,6 +569,23 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
             tool: selectedTool ? { circumferenceMM: selectedTool.circumferenceMM } : undefined
         };
 
+        // Skip calculation silently if critical data is missing (user still filling form)
+        if (inputs.orderQty <= 0 || inputs.rollGSM <= 0 || inputs.rollWidthMM <= 0 || inputs.jobHeightMM <= 0) {
+            // Reset calculated fields to zero
+            form.setValue("totalUps", 0);
+            form.setValue("baseRunningMtr", 0);
+            form.setValue("baseSqMtr", 0);
+            form.setValue("baseKg", 0);
+            form.setValue("totalRunningMtr", 0);
+            form.setValue("totalSqMtr", 0);
+            form.setValue("totalKg", 0);
+            form.setValue("materialCostAmount", 0);
+            form.setValue("totalJobCost", 0);
+            form.setValue("unitCost", 0);
+            form.setValue("finalPriceWithGST", 0);
+            return; // Exit early without error
+        }
+
         try {
             // 2. Run Base Calc with Validation
             const results = EstimationCalculator.calculateRequirements(inputs);
@@ -703,16 +726,52 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
     const router = useRouter();
 
     async function onSubmit(data: EstimationFormValues) {
+        console.log("=== ESTIMATION SAVE STARTED ===");
+        console.log("Form Data:", JSON.stringify(data, null, 2));
+
         setIsSaving(true);
         try {
-            // Simulate Network Request
-            await new Promise(resolve => setTimeout(resolve, 800));
+            // Validate required fields manually for better error messages
+            console.log("Step 1: Validating required fields...");
+
+            if (!data.clientId) {
+                console.error("Validation failed: Missing clientId");
+                toast.error("Validation Error", { description: "Please select a Client" });
+                setIsSaving(false);
+                return;
+            }
+            if (!data.jobName) {
+                console.error("Validation failed: Missing jobName");
+                toast.error("Validation Error", { description: "Please enter Job Name" });
+                setIsSaving(false);
+                return;
+            }
+            if (!data.orderQty || data.orderQty < 1) {
+                console.error("Validation failed: Invalid orderQty", data.orderQty);
+                toast.error("Validation Error", { description: "Please enter Order Quantity (minimum 1)" });
+                setIsSaving(false);
+                return;
+            }
+            if (!data.category) {
+                console.error("Validation failed: Missing category");
+                toast.error("Validation Error", { description: "Please select a Category" });
+                setIsSaving(false);
+                return;
+            }
+
+            console.log("✓ Validation passed");
+
+            // REMOVED: Artificial delay
+            // await new Promise(resolve => setTimeout(resolve, 800));
+
+            console.log("Step 2: Preparing final data...");
 
             // Logic: If we have multiple contents, the "Job" totals should be the sum of contents.
             // If contents is empty, it's a single content job, so we use the form values (data) directly.
             let finalData = { ...data };
 
             if (data.contents && data.contents.length > 0) {
+                console.log(`Processing ${data.contents.length} content items...`);
                 const totalCost = data.contents.reduce((sum: number, c: any) => sum + (c.totalJobCost || 0), 0);
                 const totalValue = data.contents.reduce((sum: number, c: any) => sum + (c.totalOrderValue || 0), 0);
                 const totalQty = data.contents.reduce((sum: number, c: any) => sum + (c.orderQty || 0), 0);
@@ -720,28 +779,56 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                 finalData.totalJobCost = parseFloat(totalCost.toFixed(2));
                 finalData.totalOrderValue = parseFloat(totalValue.toFixed(2));
                 finalData.orderQty = totalQty;
+
+                console.log(`Aggregated totals - Cost: ${totalCost}, Value: ${totalValue}, Qty: ${totalQty}`);
             }
 
-            // Save to Local Storage
-            const savedItem = storage.saveEstimation({
-                ...finalData,
-                id: initialData?.id // Pass existing ID if editing
-            });
+            console.log("Step 3: Saving to storage...");
 
+            // Clean data to avoid serialization issues
+            const cleanData = JSON.parse(JSON.stringify({
+                ...finalData,
+                // Ensure dates are strings
+                date: finalData.date ? new Date(finalData.date).toISOString() : new Date().toISOString(),
+                deliveryDate: finalData.deliveryDate ? new Date(finalData.deliveryDate).toISOString() : undefined,
+                id: initialData?.id
+            }));
+
+            console.log("Final Data to Save:", cleanData);
+
+            // Save to Local Storage
+            const savedItem = storage.saveEstimation(cleanData);
+
+            console.log("✓ Saved successfully!");
+            console.log("Saved Item:", savedItem);
+
+            console.log("Step 4: Showing success toast...");
             toast.success("Estimation Saved Successfully", {
                 description: `Job "${savedItem.jobName}" (${savedItem.jobCardNo}) saved.`
             });
 
+            console.log("Step 5: Navigating...");
             // Redirect to list or go back
             if (onBack) {
+                console.log("Calling onBack()");
                 onBack();
             } else {
+                console.log("Redirecting to /estimation");
                 router.push("/estimation");
             }
-        } catch (error) {
-            console.error(error);
-            toast.error("Failed to save estimation");
+
+            console.log("=== ESTIMATION SAVE COMPLETED SUCCESSFULLY ===");
+        } catch (error: any) {
+            console.error("=== SAVE ERROR ===");
+            console.error("Error object:", error);
+            console.error("Error message:", error?.message);
+            console.error("Error stack:", error?.stack);
+
+            toast.error("Failed to save estimation", {
+                description: error?.message || "Unknown error occurred. Check console for details."
+            });
         } finally {
+            console.log("Step 6: Resetting saving state...");
             setIsSaving(false);
         }
     }
@@ -1136,7 +1223,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                                     <div
                                                         className="h-6 px-2 border rounded text-xs md:text-[10px] flex items-center bg-gray-50 text-gray-600 truncate cursor-pointer hover-theme-gradient hover:text-white transition-all group"
                                                         title={selectedTool?.toolName}
-                                                        onClick={() => setToolDialogOpen(true)}
+                                                        onClick={() => { setToolDialogKey(prev => prev + 1); setToolDialogOpen(true); }}
                                                     >
                                                         {selectedTool ? `${selectedTool.noOfTeeth} T | ${selectedTool.circumferenceMM} mm | ${(selectedTool.circumferenceMM / 25.4).toFixed(3)} inch` : "Select Tool"}
                                                     </div>
@@ -1146,7 +1233,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                                     <div
                                                         className="h-6 px-2 border rounded text-xs md:text-[10px] flex items-center bg-gray-50 text-gray-600 truncate cursor-pointer hover-theme-gradient hover:text-white transition-all group"
                                                         title={selectedDie?.toolName}
-                                                        onClick={() => setDieDialogOpen(true)}
+                                                        onClick={() => { setDieDialogKey(prev => prev + 1); setDieDialogOpen(true); }}
                                                     >
                                                         {selectedDie ? `${selectedDie.toolNo} | ${selectedDie.toolName} | ${selectedDie.toolRefCode || '-'}` : "Select Die"}
                                                     </div>
@@ -1156,7 +1243,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                                     <div
                                                         className="h-6 px-2 border rounded text-xs md:text-[10px] flex items-center bg-gray-50 text-gray-600 truncate cursor-pointer hover-theme-gradient hover:text-white transition-all group"
                                                         title={selectedRoll?.itemName}
-                                                        onClick={() => setRollDialogOpen(true)}
+                                                        onClick={() => { setRollDialogKey(prev => prev + 1); setRollDialogOpen(true); }}
                                                     >
                                                         {selectedRoll ? `${selectedRoll.itemCode} | ${selectedRoll.supplierItemCode || '-'} | ${selectedRoll.quality} | ${selectedRoll.rollWidthMM}mm | ${selectedRoll.mill} | ${selectedRoll.faceGSM}gsm | ${selectedRoll.thicknessMicron || '-'}mic` : "Select Roll"}
                                                     </div>
@@ -1166,7 +1253,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                                     <div
                                                         className="h-6 px-2 border rounded text-xs md:text-[10px] flex items-center bg-gray-50 text-gray-600 truncate cursor-pointer hover-theme-gradient hover:text-white transition-all group"
                                                         title={selectedProcesses.map(p => p.name).join(", ")}
-                                                        onClick={() => setProcessDialogOpen(true)}
+                                                        onClick={() => { setProcessDialogKey(prev => prev + 1); setProcessDialogOpen(true); }}
                                                     >
                                                         {selectedProcesses.length > 0 ? selectedProcesses.map(p => p.name).join(", ") : "Printing, Laminating, Slitting, Pouching"}
                                                     </div>
@@ -1371,7 +1458,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                             <CardTitle className="text-[10px] font-bold text-white flex items-center gap-2">
                                                 <div className="h-1.5 w-1.5 rounded-full bg-white ring-2 ring-cyan-400" /> Process Costing
                                             </CardTitle>
-                                            <Button type="button" variant="ghost" size="sm" className="h-4 text-white hover:text-white hover:bg-white/20 text-[9px] px-1" onClick={() => setProcessDialogOpen(true)}>+ Add</Button>
+                                            <Button type="button" variant="ghost" size="sm" className="h-4 text-white hover:text-white hover:bg-white/20 text-[9px] px-1" onClick={() => { setProcessDialogKey(prev => prev + 1); setProcessDialogOpen(true); }}>+ Add</Button>
                                         </CardHeader>
                                         <div className="flex-1 flex flex-col min-h-0 overflow-x-auto">
                                             <div className="min-w-[500px]">
@@ -1533,10 +1620,10 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                 </form>
             </Form>
 
-            <ToolSelectionDialog open={toolDialogOpen} onOpenChange={setToolDialogOpen} onSelect={handleToolSelect} />
-            <ToolSelectionDialog open={dieDialogOpen} onOpenChange={setDieDialogOpen} onSelect={handleDieSelect} typeFilter="FLEXO DIE" />
-            <RollSelectionDialog open={rollDialogOpen} onOpenChange={setRollDialogOpen} onSelect={handleRollSelect} />
-            <ProcessSelectionDialog open={processDialogOpen} onOpenChange={setProcessDialogOpen} onSelect={handleProcessSelect} preSelectedIds={form.watch("processIds")} />
+            <ToolSelectionDialog key={`tool-${toolDialogKey}`} open={toolDialogOpen} onOpenChange={setToolDialogOpen} onSelect={handleToolSelect} />
+            <ToolSelectionDialog key={`die-${dieDialogKey}`} open={dieDialogOpen} onOpenChange={setDieDialogOpen} onSelect={handleDieSelect} typeFilter="FLEXO DIE" />
+            <RollSelectionDialog key={`roll-${rollDialogKey}`} open={rollDialogOpen} onOpenChange={setRollDialogOpen} onSelect={handleRollSelect} />
+            <ProcessSelectionDialog key={`process-${processDialogKey}`} open={processDialogOpen} onOpenChange={setProcessDialogOpen} onSelect={handleProcessSelect} preSelectedIds={form.watch("processIds")} />
         </div >
     );
 };

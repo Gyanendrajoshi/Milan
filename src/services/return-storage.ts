@@ -3,20 +3,25 @@ import { grnStorage } from "@/services/grn-storage";
 
 const STORAGE_KEY = "MILAN_RETURNS";
 
+// Helper to safely get list
+const getList = (): MaterialReturn[] => {
+    if (typeof window === "undefined") return [];
+    const data = localStorage.getItem(STORAGE_KEY);
+    try {
+        return data ? JSON.parse(data) : [];
+    } catch (e) {
+        console.error("Failed to parse Returns", e);
+        return [];
+    }
+};
+
 export const returnStorage = {
     getAll: (): MaterialReturn[] => {
-        if (typeof window === "undefined") return [];
-        const data = localStorage.getItem(STORAGE_KEY);
-        try {
-            return data ? JSON.parse(data) : [];
-        } catch (e) {
-            console.error("Failed to parse Returns", e);
-            return [];
-        }
+        return getList();
     },
 
     save: (data: Omit<MaterialReturn, "id" | "createdAt" | "updatedAt">): MaterialReturn => {
-        const list = returnStorage.getAll();
+        const list = getList();
         const now = new Date().toISOString();
 
         // Financial Year Logic
@@ -55,18 +60,24 @@ export const returnStorage = {
         };
 
         list.unshift(newReturn); // Add to top
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
 
-        // Update stock: Add back returned quantities
-        newReturn.items.forEach(item => {
-            grnStorage.restoreStock(item.grnItemId, item.returnedQty);
-        });
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+
+            // Update stock: Add back returned quantities
+            newReturn.items.forEach(item => {
+                grnStorage.restoreStock(item.grnItemId, item.returnedQty);
+            });
+        } catch (error) {
+            console.error("Failed to save return:", error);
+            throw error;
+        }
 
         return newReturn;
     },
 
     getByIssue: (issueId: string): MaterialReturn[] => {
-        const list = returnStorage.getAll();
+        const list = getList();
         return list.filter(r => r.issueId === issueId);
     },
 
@@ -84,7 +95,7 @@ export const returnStorage = {
     },
 
     delete: (id: string): void => {
-        const list = returnStorage.getAll();
+        const list = getList();
         const returnToDelete = list.find(r => r.id === id);
 
         if (returnToDelete && returnToDelete.items) {
@@ -99,6 +110,10 @@ export const returnStorage = {
         }
 
         const newList = list.filter(r => r.id !== id);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(newList));
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(newList));
+        } catch (error) {
+            console.error("Failed to delete return:", error);
+        }
     }
 };
