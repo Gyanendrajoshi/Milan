@@ -29,8 +29,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 
-import { createGRN } from "@/services/api/grn-service"; // Mock
-import { grnStorage } from "@/services/grn-storage";
+import { createGRN } from "@/services/api/grn-service";
 import { GRN, GRNItem } from "@/types/grn-master";
 import { PurchaseOrderItem } from "../../services/mock-data/purchase-orders"; // Type
 import { mockMaterials } from "../../services/mock-data/materials";
@@ -271,8 +270,8 @@ export function GRNForm({ initialItems, onSuccess, onCancel, readOnly = false, e
                 }))
             };
 
-            // await createGRN(apiData);
-            const savedGRN = grnStorage.save(apiData);
+            const savedGRN = await createGRN(apiData);
+            // const savedGRN = grnStorage.save(apiData); // Removed direct storage call
             toast.success("GRN Created Successfully", { description: "Stock updated." });
             onSuccess(savedGRN);
         } catch (error) {

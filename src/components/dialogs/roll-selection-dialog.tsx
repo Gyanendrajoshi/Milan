@@ -16,17 +16,19 @@ interface RollSelectionDialogProps {
 
 export function RollSelectionDialog({ open, onOpenChange, onSelect }: RollSelectionDialogProps) {
     const [rolls, setRolls] = useState<RollMaster[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    // Load rolls from localStorage
+    // Load rolls from localStorage - Always load when component mounts
     useEffect(() => {
         const loadRolls = async () => {
+            setIsLoading(true);
             const data = await getRolls();
+            console.log("Roll Dialog: Loaded rolls count:", data.length);
             setRolls(data);
+            setIsLoading(false);
         };
-        if (open) {
-            loadRolls();
-        }
-    }, [open]);
+        loadRolls();
+    }, []); // Load once on mount
     const columns: ColumnDef<RollMaster>[] = useMemo(() => [
         {
             accessorKey: "itemCode",
@@ -120,7 +122,12 @@ export function RollSelectionDialog({ open, onOpenChange, onSelect }: RollSelect
                 <DialogHeader className="px-6 py-4 bg-theme-gradient-r text-white">
                     <DialogTitle className="text-white">Select Material (Roll) [{rolls.length}]</DialogTitle>
                 </DialogHeader>
-                <div className="flex-1 overflow-hidden p-6 pt-2">
+                <div className="flex-1 overflow-hidden p-6 pt-2 relative">
+                    {isLoading ? (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
+                            <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                        </div>
+                    ) : null}
                     <DataTable
                         columns={columns}
                         data={rolls}

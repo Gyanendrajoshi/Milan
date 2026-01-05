@@ -42,8 +42,8 @@ const poItemSchema = z.object({
     // Quantities
     qtyRunMtr: z.number().optional(),
     qtySqMtr: z.number().optional(),
-    qtyKg: z.number().optional(),
-    qtyUnit: z.number().optional(), // For Materials
+    qtyKg: z.number().min(0).optional(),
+    qtyUnit: z.number().min(0).optional(), // For Materials
 
     reqDate: z.date().optional(),
     rateType: z.string(), // KG, Sq.Mtr, Each, etc.
@@ -267,11 +267,11 @@ export function PurchaseOrderForm() {
             return {
                 id: Math.random().toString(36).substr(2, 9),
                 itemId: r.id,
-                itemCode: r.itemCode,
-                itemName: r.itemName,
+                itemCode: r.itemCode || "UNKNOWN", // Safety fallback
+                itemName: r.itemName || "Unknown Item",
                 itemType: "Roll" as const,
-                rollWidthMM: r.rollWidthMM,
-                rollTotalGSM: r.totalGSM,
+                rollWidthMM: r.rollWidthMM || 0,
+                rollTotalGSM: r.totalGSM || 0,
                 qtyRunMtr: 0,
                 qtySqMtr: 0,
                 qtyKg: 0,
@@ -296,8 +296,8 @@ export function PurchaseOrderForm() {
             return {
                 id: Math.random().toString(36).substr(2, 9),
                 itemId: m.id,
-                itemCode: m.itemCode || m.id.substring(0, 6),
-                itemName: m.itemName,
+                itemCode: m.itemCode || m.id?.substring(0, 6) || "UNKNOWN",
+                itemName: m.itemName || "Unknown Material",
                 itemType: "Material" as const,
                 qtyUnit: 0,
                 reqDate: new Date(),
@@ -314,96 +314,144 @@ export function PurchaseOrderForm() {
     };
 
     const onSubmit = (data: POFormValues) => {
-        // Validation: Check for duplicate PO Number (exclude current PO if editing)
-        const currentId = searchParams.get("id");
-        const allPOs = poStorage.getAll();
-        const isDuplicate = allPOs.some(p => p.poNumber === data.poNumber && p.id !== currentId);
-        if (isDuplicate) {
-            toast.error("Duplicate PO Number", {
-                description: `PO Number ${data.poNumber} already exists. Please choose a unique number.`
+        try {
+            // Validation: Check for duplicate PO Number (exclude current PO if editing)
+            const currentId = searchParams.get("id");
+            const allPOs = poStorage.getAll();
+            const isDuplicate = allPOs.some(p => p.poNumber === data.poNumber && p.id !== currentId);
+            if (isDuplicate) {
+                toast.error("Duplicate PO Number", {
+                    description: `PO Number ${data.poNumber} already exists. Please choose a unique number.`
+                });
+                return;
+            }
+
+            // Production Step: Recalculate all items to ensure data integrity before submission
+            // This prevents any mismatch between displayed values (derived) and stored values.
+            const finalItems = data.items.map(item => {
+                const calcs = getCalculatedItem(item);
+                return {
+                    ...item,
+                    basicAmount: parseFloat(calcs.basicAmt.toFixed(2)),
+                    taxAmount: parseFloat(calcs.taxAmt.toFixed(2)),
+                    cgstAmt: parseFloat(calcs.cgst.toFixed(2)),
+                    sgstAmt: parseFloat(calcs.sgst.toFixed(2)),
+                    igstAmt: parseFloat(calcs.igst.toFixed(2)),
+                    totalAmount: parseFloat(calcs.totalAmt.toFixed(2)),
+                };
             });
-            return;
+
+            const finalData = {
+                ...data,
+                items: finalItems,
+                // Ensure Grand Totals match the sum of final items
+                grandBasic: parseFloat(finalItems.reduce((sum, item) => sum + item.basicAmount, 0).toFixed(2)),
+                grandTax: parseFloat(finalItems.reduce((sum, item) => sum + item.taxAmount, 0).toFixed(2)),
+                grandTotal: parseFloat((
+                    finalItems.reduce((sum, item) => sum + item.totalAmount, 0) + (data.otherCharges || 0)
+                ).toFixed(2))
+            };
+
+            // Transform to PO storage format
+            const selectedSupplier = mockSuppliers.find(s => s.id === finalData.supplierId);
+            const poData = {
+                ...finalData,
+                poDate: finalData.poDate.toISOString().split('T')[0],
+                supplierName: selectedSupplier?.supplierName || "",
+                status: "Pending" as const,
+                items: finalData.items.map(item => {
+                    const orderedQty = item.itemType === "Roll" ? (item.qtyKg || 0) : (item.qtyUnit || 0);
+                    return {
+                        id: item.id,
+                        itemId: item.itemId,
+                        itemCode: item.itemCode,
+                        itemName: item.itemName,
+                        group: item.itemType,
+                        uom: item.rateType,
+                        orderedQty: orderedQty,
+                        receivedQty: 0,
+                        pendingQty: orderedQty,
+                        rate: item.rate,
+                        rateType: item.rateType,
+                        basicAmount: item.basicAmount,
+                        taxAmount: item.taxAmount,
+                        totalAmount: item.totalAmount,
+                        hsnCode: item.hsnCode,
+                        gstPercent: item.gstPercent,
+                        cgstAmt: item.cgstAmt,
+                        sgstAmt: item.sgstAmt,
+                        igstAmt: item.igstAmt,
+                        rollWidthMM: item.rollWidthMM,
+                        rollTotalGSM: item.rollTotalGSM,
+                        // Save all quantity fields for edit mode
+                        qtyRunMtr: item.qtyRunMtr,
+                        qtySqMtr: item.qtySqMtr,
+                        qtyKg: item.qtyKg,
+                        qtyUnit: item.qtyUnit,
+                        reqDate: item.reqDate,
+                        remark: item.remark,
+                        purchaseUnit: item.rateType,
+                        purchaseRate: item.rate
+                    };
+                })
+            };
+
+            // Save to storage
+            const savedPO = poStorage.save(poData);
+
+            console.log("PO Saved:", savedPO);
+            toast.success("Purchase Order Created Successfully", {
+                description: `PO Number: ${savedPO.poNumber}`,
+            });
+
+            setTimeout(() => router.push("/inventory/purchase-order"), 1000);
+        } catch (error: any) {
+            console.error("PO Creation Error:", error);
+            toast.error("Failed to create PO", {
+                description: error.message || "Unknown error occurred"
+            });
+        }
+    };
+
+    const onInvalid = (errors: any) => {
+        console.error("Form Validation Errors (RAW):", errors);
+
+        let errorMessages: string[] = [];
+
+        if (Object.keys(errors).length === 0) {
+            // If errors object is empty but invalid, check key fields manually
+            const values = form.getValues();
+            if (!values.supplierId) errorMessages.push("Supplier is required");
+            if (!values.items || values.items.length === 0) errorMessages.push("At least one item is required");
+            if (values.items && values.items.length > 0) {
+                // Check items for validity
+                values.items.forEach((item, index) => {
+                    if (item.itemType === 'Roll' && (!item.qtyKg || item.qtyKg <= 0)) {
+                        errorMessages.push(`Item ${index + 1} (Roll): Quantity (Kg) must be greater than 0`);
+                    }
+                    if (item.itemType === 'Material' && (!item.qtyUnit || item.qtyUnit <= 0)) {
+                        errorMessages.push(`Item ${index + 1} (Material): Quantity must be greater than 0`);
+                    }
+                });
+            }
+        } else {
+            errorMessages = Object.keys(errors).map(key => {
+                if (key === 'items') {
+                    // Drill down into array errors if possible
+                    if (Array.isArray(errors.items)) {
+                        return `Items: Please check quantities and required fields`;
+                    }
+                    return 'Items: Please check item details';
+                }
+                if (key === 'supplierId') return 'Supplier is required';
+                if (errors[key]?.message) return `${key}: ${errors[key].message}`;
+                return `${key}: Invalid`;
+            });
         }
 
-        // Production Step: Recalculate all items to ensure data integrity before submission
-        // This prevents any mismatch between displayed values (derived) and stored values.
-        const finalItems = data.items.map(item => {
-            const calcs = getCalculatedItem(item);
-            return {
-                ...item,
-                basicAmount: parseFloat(calcs.basicAmt.toFixed(2)),
-                taxAmount: parseFloat(calcs.taxAmt.toFixed(2)),
-                cgstAmt: parseFloat(calcs.cgst.toFixed(2)),
-                sgstAmt: parseFloat(calcs.sgst.toFixed(2)),
-                igstAmt: parseFloat(calcs.igst.toFixed(2)),
-                totalAmount: parseFloat(calcs.totalAmt.toFixed(2)),
-            };
+        toast.error("Validation Failed", {
+            description: errorMessages.slice(0, 3).join(", ") || "Please check required fields"
         });
-
-        const finalData = {
-            ...data,
-            items: finalItems,
-            // Ensure Grand Totals match the sum of final items
-            grandBasic: parseFloat(finalItems.reduce((sum, item) => sum + item.basicAmount, 0).toFixed(2)),
-            grandTax: parseFloat(finalItems.reduce((sum, item) => sum + item.taxAmount, 0).toFixed(2)),
-            grandTotal: parseFloat((
-                finalItems.reduce((sum, item) => sum + item.totalAmount, 0) + (data.otherCharges || 0)
-            ).toFixed(2))
-        };
-
-        // Transform to PO storage format
-        const selectedSupplier = mockSuppliers.find(s => s.id === finalData.supplierId);
-        const poData = {
-            ...finalData,
-            poDate: finalData.poDate.toISOString().split('T')[0],
-            supplierName: selectedSupplier?.supplierName || "",
-            status: "Pending" as const,
-            items: finalData.items.map(item => {
-                const orderedQty = item.itemType === "Roll" ? (item.qtyKg || 0) : (item.qtyUnit || 0);
-                return {
-                    id: item.id,
-                    itemId: item.itemId,
-                    itemCode: item.itemCode,
-                    itemName: item.itemName,
-                    group: item.itemType,
-                    uom: item.rateType,
-                    orderedQty: orderedQty,
-                    receivedQty: 0,
-                    pendingQty: orderedQty,
-                    rate: item.rate,
-                    rateType: item.rateType,
-                    basicAmount: item.basicAmount,
-                    taxAmount: item.taxAmount,
-                    totalAmount: item.totalAmount,
-                    hsnCode: item.hsnCode,
-                    gstPercent: item.gstPercent,
-                    cgstAmt: item.cgstAmt,
-                    sgstAmt: item.sgstAmt,
-                    igstAmt: item.igstAmt,
-                    rollWidthMM: item.rollWidthMM,
-                    rollTotalGSM: item.rollTotalGSM,
-                    // Save all quantity fields for edit mode
-                    qtyRunMtr: item.qtyRunMtr,
-                    qtySqMtr: item.qtySqMtr,
-                    qtyKg: item.qtyKg,
-                    qtyUnit: item.qtyUnit,
-                    reqDate: item.reqDate,
-                    remark: item.remark,
-                    purchaseUnit: item.rateType,
-                    purchaseRate: item.rate
-                };
-            })
-        };
-
-        // Save to storage
-        const savedPO = poStorage.save(poData);
-
-        console.log("PO Saved:", savedPO);
-        toast.success("Purchase Order Created Successfully", {
-            description: `PO Number: ${savedPO.poNumber}`,
-        });
-
-        setTimeout(() => router.push("/inventory/purchase-order"), 1000);
     };
 
     const handleCancel = () => {
@@ -417,7 +465,7 @@ export function PurchaseOrderForm() {
     return (
         <div className="flex flex-col h-full bg-slate-50/50 print:bg-white">
             <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 print:space-y-0">
+                <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-4 print:space-y-0">
 
                     {/* Header */}
                     <Card className="rounded-none border-0 shadow-sm overflow-hidden print:shadow-none print:border-0">

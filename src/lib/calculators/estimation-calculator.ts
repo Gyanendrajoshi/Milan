@@ -121,74 +121,88 @@ export const EstimationCalculator = {
 
     /**
      * Calculates Process Cost for a single process based on rate type.
+     * Respects manual overrides - if user edited quantity or rate, we don't override it.
      */
     calculateProcessCost: (
         proc: any, // Process object from schema
         totals: { totalKg: number; totalRM: number; totalSqMtr: number; orderQty: number; colors: number; sizeW: number; sizeL: number }
-    ): { quantity: number; amount: number } => {
-        let calculatedQty = -1;
+    ): { quantity: number; rate: number; amount: number; isManualQuantity?: boolean; isManualRate?: boolean } => {
         const { totalKg, totalRM, totalSqMtr, orderQty, colors, sizeW, sizeL } = totals;
         const sizeW_Inch = sizeW / 25.4;
         const sizeL_Inch = sizeL / 25.4;
 
-        switch (proc.rateType) {
-            case "Per KG":
-            case "Rate/Kg":
-                calculatedQty = totalKg;
-                break;
-            case "Per RM":
-            case "Rate/Meter":
-            case "Rate/Running Mtr":
-                calculatedQty = totalRM;
-                break;
-            case "Per Sq.Mtr":
-            case "Rate/Sq.Meter":
-                calculatedQty = totalSqMtr;
-                break;
-            case "Rate/Color":
-                calculatedQty = colors;
-                break;
-            case "Rate/Sq.Inch/Color":
-                calculatedQty = colors * sizeW_Inch * sizeL_Inch * orderQty;
-                break;
-            case "Rate/Sq.Inch/Unit":
-                calculatedQty = orderQty * sizeW_Inch * sizeL_Inch;
-                break;
-            case "Rate/Sq.Inch":
-                calculatedQty = sizeW_Inch * sizeL_Inch * orderQty;
-                break;
-            case "Rate/Unit":
-            case "Rate/Order Quantity":
-                calculatedQty = orderQty;
-                break;
-            case "Per 1000 Ups":
-            case "Rate/1000 Units":
-                calculatedQty = Math.ceil(orderQty / 1000) * 1000;
-                break;
-            case "Rate/Job":
-                calculatedQty = 1;
-                break;
-            case "Rate/Inch/Unit":
-                calculatedQty = sizeL_Inch * orderQty;
-                break;
-            case "Rate/Sq.CM":
-                calculatedQty = (sizeW / 10) * (sizeL / 10) * orderQty;
-                break;
-        }
+        // If user manually edited quantity, use their value. Otherwise calculate from formula.
+        let finalQuantity = proc.quantity || 0;
+        if (!proc.isManualQuantity) {
+            let calculatedQty = -1;
 
-        if (calculatedQty >= 0) {
-            const qty = parseFloat(calculatedQty.toFixed(4));
-            let rateMultiplier = proc.rate || 0;
-            if (proc.rateType === "Rate/1000 Units" || proc.rateType === "Per 1000 Ups") {
-                rateMultiplier = rateMultiplier / 1000;
+            switch (proc.rateType) {
+                case "Per KG":
+                case "Rate/Kg":
+                    calculatedQty = totalKg;
+                    break;
+                case "Per RM":
+                case "Rate/Meter":
+                case "Rate/Running Mtr":
+                    calculatedQty = totalRM;
+                    break;
+                case "Per Sq.Mtr":
+                case "Rate/Sq.Meter":
+                    calculatedQty = totalSqMtr;
+                    break;
+                case "Rate/Color":
+                    calculatedQty = colors;
+                    break;
+                case "Rate/Sq.Inch/Color":
+                    calculatedQty = colors * sizeW_Inch * sizeL_Inch * orderQty;
+                    break;
+                case "Rate/Sq.Inch/Unit":
+                    calculatedQty = orderQty * sizeW_Inch * sizeL_Inch;
+                    break;
+                case "Rate/Sq.Inch":
+                    calculatedQty = sizeW_Inch * sizeL_Inch * orderQty;
+                    break;
+                case "Rate/Unit":
+                case "Rate/Order Quantity":
+                    calculatedQty = orderQty;
+                    break;
+                case "Per 1000 Ups":
+                case "Rate/1000 Units":
+                    calculatedQty = Math.ceil(orderQty / 1000) * 1000;
+                    break;
+                case "Rate/Job":
+                    calculatedQty = 1;
+                    break;
+                case "Rate/Inch/Unit":
+                    calculatedQty = sizeL_Inch * orderQty;
+                    break;
+                case "Rate/Sq.CM":
+                    calculatedQty = (sizeW / 10) * (sizeL / 10) * orderQty;
+                    break;
             }
-            const setup = proc.setupCharges || 0;
-            const amount = parseFloat(((qty * rateMultiplier) + setup).toFixed(2));
-            return { quantity: qty, amount };
+
+            if (calculatedQty >= 0) {
+                finalQuantity = parseFloat(calculatedQty.toFixed(4));
+            }
         }
 
-        // Return existing if no formula matched (manual entry)
-        return { quantity: proc.quantity || 0, amount: proc.amount || 0 };
+        // If user manually edited rate, use their value. Otherwise use process master rate.
+        const finalRate = proc.isManualRate ? (proc.rate || 0) : (proc.rate || 0);
+
+        // Calculate amount: quantity × rate (NO setup charges as per user request)
+        let rateMultiplier = finalRate;
+        if (proc.rateType === "Rate/1000 Units" || proc.rateType === "Per 1000 Ups") {
+            rateMultiplier = rateMultiplier / 1000;
+        }
+        const amount = parseFloat((finalQuantity * rateMultiplier).toFixed(2));
+
+        return {
+            quantity: finalQuantity,
+            rate: finalRate,
+            amount,
+            isManualQuantity: proc.isManualQuantity || false,
+            isManualRate: proc.isManualRate || false
+        };
     },
 
     /**

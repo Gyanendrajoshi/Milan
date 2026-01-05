@@ -18,17 +18,19 @@ interface ToolSelectionDialogProps {
 
 export function ToolSelectionDialog({ open, onOpenChange, onSelect, typeFilter }: ToolSelectionDialogProps) {
     const [tools, setTools] = useState<ToolMaster[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    // Load tools from localStorage
+    // Load tools from localStorage - Always load when component mounts
     useEffect(() => {
         const loadTools = async () => {
+            setIsLoading(true);
             const data = await getTools();
+            console.log("Tool Dialog: Loaded tools count:", data.length);
             setTools(data);
+            setIsLoading(false);
         };
-        if (open) {
-            loadTools();
-        }
-    }, [open]);
+        loadTools();
+    }, []); // Load once on mount
     const columns: ColumnDef<ToolMaster>[] = useMemo(() => {
         const defaultCols: ColumnDef<ToolMaster>[] = [
             {
@@ -127,7 +129,12 @@ export function ToolSelectionDialog({ open, onOpenChange, onSelect, typeFilter }
                 <DialogHeader className="px-6 py-4 bg-theme-gradient-r text-white">
                     <DialogTitle className="text-white">Select Tool {typeFilter ? `(${typeFilter})` : ""} [{tools.length}]</DialogTitle>
                 </DialogHeader>
-                <div className="flex-1 overflow-hidden p-6 pt-2">
+                <div className="flex-1 overflow-hidden p-6 pt-2 relative">
+                    {isLoading ? (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
+                            <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                        </div>
+                    ) : null}
                     <DataTable
                         columns={columns}
                         data={filteredData}

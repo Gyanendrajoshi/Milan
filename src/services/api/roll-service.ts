@@ -9,7 +9,7 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * In production: Replace with actual API call to GET /api/rolls
  */
 export async function getRolls(): Promise<RollMaster[]> {
-  await delay(300);
+  // await delay(300); // Removed delay
   return rollStorage.getAll();
 }
 

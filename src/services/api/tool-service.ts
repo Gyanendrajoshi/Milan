@@ -9,7 +9,7 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * In production: Replace with actual API call to GET /api/tools
  */
 export async function getTools(): Promise<ToolMaster[]> {
-  await delay(300);
+  // await delay(300); // Removed delay
   return toolStorage.getAll();
 }
 

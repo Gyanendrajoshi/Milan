@@ -21,17 +21,19 @@ const EMPTY_ARRAY: string[] = [];
 export function ProcessSelectionDialog({ open, onOpenChange, onSelect, preSelectedIds = EMPTY_ARRAY }: ProcessSelectionDialogProps) {
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
     const [processes, setProcesses] = useState<ProcessMaster[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    // Load processes from localStorage
+    // Load processes from localStorage - Always load when component mounts
     useEffect(() => {
         const loadProcesses = async () => {
+            setIsLoading(true);
             const data = await getProcessMasterList();
+            console.log("Process Dialog: Loaded processes count:", data.length);
             setProcesses(data);
+            setIsLoading(false);
         };
-        if (open) {
-            loadProcesses();
-        }
-    }, [open]);
+        loadProcesses();
+    }, []); // Load once on mount
 
     // Sync pre-selected IDs when dialog opens
     useEffect(() => {
@@ -94,7 +96,12 @@ export function ProcessSelectionDialog({ open, onOpenChange, onSelect, preSelect
                 <DialogHeader className="px-6 py-4 bg-theme-gradient-r text-white">
                     <DialogTitle className="text-white">Select Processes [{processes.length}]</DialogTitle>
                 </DialogHeader>
-                <div className="flex-1 overflow-hidden p-6 pt-2">
+                <div className="flex-1 overflow-hidden p-6 pt-2 relative">
+                    {isLoading ? (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
+                            <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                        </div>
+                    ) : null}
                     <DataTable
                         columns={columns}
                         data={processes}

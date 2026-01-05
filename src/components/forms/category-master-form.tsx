@@ -72,13 +72,16 @@ export function CategoryMasterForm({ initialData, onSuccess }: CategoryMasterFor
     async function onSubmit(data: CategoryMasterSchemaType) {
         setIsSubmitting(true);
         try {
-            // Mock submission
-            console.log("Submitting Category with processes:", data.processIds);
-            await new Promise(r => setTimeout(r, 1000));
+            if (initialData) {
+                await updateCategory(initialData.id, data);
+            } else {
+                await createCategory(data);
+            }
             toast.success(initialData ? "Category updated!" : "Category created!");
             if (onSuccess) onSuccess();
         } catch (error) {
-            toast.error("Failed");
+            console.error("Submission failed:", error);
+            toast.error("Failed to save category");
         } finally {
             setIsSubmitting(false);
         }

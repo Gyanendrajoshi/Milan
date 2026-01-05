@@ -39,6 +39,8 @@ import { ProcessSelectionDialog } from "@/components/dialogs/process-selection-d
 import { getClients } from "@/services/api/client-service";
 import { getProcessMasterList } from "@/services/api/process-service";
 import { getCategories } from "@/services/api/category-service";
+import { getSalesPersons } from "@/services/api/sales-person-service";
+import { getMachines } from "@/services/api/machine-service";
 import { CreatableCombobox } from "@/components/ui/creatable-combobox";
 import { MOCK_CHARGE_TYPES } from "@/types/process-master";
 
@@ -79,14 +81,27 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
     useEffect(() => {
         const loadMasters = async () => {
             try {
-                const [c, cat, proc] = await Promise.all([
+                const [c, cat, proc, sp, mac] = await Promise.all([
                     getClients(),
                     getCategories(),
-                    getProcessMasterList()
+                    getProcessMasterList(),
+                    getSalesPersons(),
+                    getMachines()
                 ]);
                 setClients(c || []);
                 setCategories(cat || []);
                 setMockProcesses(proc || []);
+
+                // Map Sales Persons
+                if (sp) {
+                    setSalesPersons(sp.map(s => ({ label: s.name, value: s.name })));
+                }
+
+                // Map Machines
+                if (mac) {
+                    setMachines(mac.map(m => ({ label: m.name, value: m.name })));
+                }
+
             } catch (error) {
                 console.error("Failed to load master data", error);
                 toast.error("Failed to load master data");
@@ -96,16 +111,8 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
     }, []);
 
     // Dynamic Dropdown Lists
-    const [salesPersons, setSalesPersons] = useState<{ label: string; value: string }[]>([
-        { label: "Rahul Sharma", value: "Rahul Sharma" },
-        { label: "Amit Patel", value: "Amit Patel" },
-        { label: "Priya Singh", value: "Priya Singh" }
-    ]);
-    const [machines, setMachines] = useState<{ label: string; value: string }[]>([
-        { label: "Rotogravure 8 Color", value: "Rotogravure 8 Color" },
-        { label: "Flexo 4 Color", value: "Flexo 4 Color" },
-        { label: "Offset 6 Color", value: "Offset 6 Color" }
-    ]);
+    const [salesPersons, setSalesPersons] = useState<{ label: string; value: string }[]>([]);
+    const [machines, setMachines] = useState<{ label: string; value: string }[]>([]);
 
     // Selected Data States
     const [selectedTool, setSelectedTool] = useState<any>(null);
@@ -622,8 +629,8 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
             };
 
             const updatedProcesses = currentProcesses.map(proc => {
-                const { quantity, amount } = EstimationCalculator.calculateProcessCost(proc, totalsForProcess);
-                return { ...proc, quantity, amount };
+                const { quantity, rate, amount, isManualQuantity, isManualRate } = EstimationCalculator.calculateProcessCost(proc, totalsForProcess);
+                return { ...proc, quantity, rate, amount, isManualQuantity: isManualQuantity || false, isManualRate: isManualRate || false };
             });
 
             form.setValue("processCosts", updatedProcesses);
@@ -870,6 +877,18 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
     };
 
     const handleRollSelect = (roll: any) => {
+        // Validate roll data for suspicious values
+        if (roll.rollWidthMM < 100) {
+            toast.warning("Suspiciously Small Roll Width!", {
+                description: `Roll width is ${roll.rollWidthMM}mm. Did you mean ${roll.rollWidthMM * 100}mm? This will result in very low material calculations.`
+            });
+        }
+        if (roll.totalGSM < 20) {
+            toast.warning("Suspiciously Small Roll GSM!", {
+                description: `Roll GSM is ${roll.totalGSM}gsm. This is very low and will result in minimal material weight. Please verify your Roll Master data.`
+            });
+        }
+
         setSelectedRoll(roll);
         setValue("rollId", roll.id);
         setValue("rollWidthMM", roll.rollWidthMM);
@@ -900,7 +919,8 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                 quantity: existing?.quantity || 0,
                 rate: existing?.rate || proc.rate || 0,
                 amount: existing?.amount || 0,
-                setupCharges: (proc as any).setupCharges || 0
+                isManualQuantity: existing?.isManualQuantity || false,
+                isManualRate: existing?.isManualRate || false
             };
         });
 
@@ -1475,48 +1495,85 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                                             <span className="text-[10px]">No processes added</span>
                                                         </div>
                                                     )}
-                                                    {processFields.map((proc, idx) => (
-                                                        <div key={proc.id} className="grid grid-cols-12 gap-1 px-3 py-1 border-b border-gray-50 items-center hover:bg-gray-50">
-                                                            <div className="col-span-3 text-[10px] font-medium text-gray-700 truncate">{proc.processName}</div>
-                                                            <div className="col-span-4">
-                                                                <div className="flex items-center gap-1">
-                                                                    <div className="text-[9px] text-gray-400 w-12 truncate" title={proc.rateType}>{proc.rateType?.replace("Per ", "")}</div>
-                                                                    <Input
-                                                                        type="number" className="h-7 w-20 text-right text-[10px] bg-white px-2"
-                                                                        step="any"
-                                                                        {...form.register(`processCosts.${idx}.quantity`, {
-                                                                            valueAsNumber: true,
-                                                                            onChange: (e) => {
-                                                                                const qty = parseFloat(e.target.value) || 0;
-                                                                                const rate = form.getValues(`processCosts.${idx}.rate`) || 0;
-                                                                                const setup = (proc as any).setupCharges || 0; // Capture setup from object
-                                                                                const amt = parseFloat(((qty * rate) + setup).toFixed(2));
-                                                                                form.setValue(`processCosts.${idx}.amount`, amt);
-                                                                            }
-                                                                        })}
-                                                                    />
+                                                    {processFields.map((proc, idx) => {
+                                                        const handleQuantityChange = () => {
+                                                            // Mark as manually edited
+                                                            form.setValue(`processCosts.${idx}.isManualQuantity`, true);
+
+                                                            // Calculate amount (NO setup charges)
+                                                            const qty = form.getValues(`processCosts.${idx}.quantity`) || 0;
+                                                            const rate = form.getValues(`processCosts.${idx}.rate`) || 0;
+                                                            const amt = parseFloat((qty * rate).toFixed(2));
+                                                            form.setValue(`processCosts.${idx}.amount`, amt);
+
+                                                            // Trigger full recalculation
+                                                            setTimeout(() => recalculateAll("processCosts"), 50);
+                                                        };
+
+                                                        const handleRateChange = () => {
+                                                            // Mark as manually edited
+                                                            form.setValue(`processCosts.${idx}.isManualRate`, true);
+
+                                                            // Calculate amount (NO setup charges)
+                                                            const qty = form.getValues(`processCosts.${idx}.quantity`) || 0;
+                                                            const rate = form.getValues(`processCosts.${idx}.rate`) || 0;
+                                                            const amt = parseFloat((qty * rate).toFixed(2));
+                                                            form.setValue(`processCosts.${idx}.amount`, amt);
+
+                                                            // Trigger full recalculation
+                                                            setTimeout(() => recalculateAll("processCosts"), 50);
+                                                        };
+
+                                                        // Check if this process has manual edits
+                                                        const isManualQty = form.watch(`processCosts.${idx}.isManualQuantity`) || false;
+                                                        const isManualRt = form.watch(`processCosts.${idx}.isManualRate`) || false;
+
+                                                        return (
+                                                            <div key={proc.id} className="grid grid-cols-12 gap-1 px-3 py-1 border-b border-gray-50 items-center hover:bg-gray-50 group">
+                                                                <div className="col-span-3 text-[10px] font-medium text-gray-700 truncate">{proc.processName}</div>
+                                                                <div className="col-span-4">
+                                                                    <div className="flex items-center gap-1">
+                                                                        <div className="text-[9px] text-gray-400 w-12 truncate" title={proc.rateType}>{proc.rateType?.replace("Per ", "").replace("Rate/", "")}</div>
+                                                                        <div className="relative flex-1">
+                                                                            <Input
+                                                                                type="number"
+                                                                                className={`h-7 w-20 text-right text-[10px] bg-white px-2 ${isManualQty ? 'border-orange-400 ring-1 ring-orange-200' : 'border-blue-200'} focus:border-blue-400 focus:ring-1 focus:ring-blue-400`}
+                                                                                step="any"
+                                                                                placeholder="0.00"
+                                                                                {...form.register(`processCosts.${idx}.quantity`, {
+                                                                                    valueAsNumber: true,
+                                                                                    onChange: handleQuantityChange
+                                                                                })}
+                                                                            />
+                                                                            {isManualQty && (
+                                                                                <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-orange-500 ring-1 ring-white" title="Manually edited" />
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="col-span-3 text-right flex justify-end">
+                                                                    <div className="relative">
+                                                                        <Input
+                                                                            type="number"
+                                                                            className={`h-7 w-20 text-right text-[10px] bg-white px-2 ${isManualRt ? 'border-orange-400 ring-1 ring-orange-200' : 'border-green-200'} focus:border-green-400 focus:ring-1 focus:ring-green-400`}
+                                                                            step="any"
+                                                                            placeholder="0.00"
+                                                                            {...form.register(`processCosts.${idx}.rate`, {
+                                                                                valueAsNumber: true,
+                                                                                onChange: handleRateChange
+                                                                            })}
+                                                                        />
+                                                                        {isManualRt && (
+                                                                            <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-orange-500 ring-1 ring-white" title="Manually edited" />
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="col-span-2 text-right font-bold text-gray-700 text-[10px]">
+                                                                    ₹{form.watch(`processCosts.${idx}.amount`)?.toFixed(2) || '0.00'}
                                                                 </div>
                                                             </div>
-                                                            <div className="col-span-3 text-right flex justify-end">
-                                                                <Input
-                                                                    type="number" className="h-7 w-20 text-right text-[10px] bg-white px-2"
-                                                                    step="any"
-                                                                    {...form.register(`processCosts.${idx}.rate`, {
-                                                                        valueAsNumber: true,
-                                                                        onChange: (e) => {
-                                                                            const rate = parseFloat(e.target.value) || 0;
-                                                                            const qty = form.getValues(`processCosts.${idx}.quantity`) || 0;
-                                                                            const amt = parseFloat((qty * rate).toFixed(2));
-                                                                            form.setValue(`processCosts.${idx}.amount`, amt);
-                                                                        }
-                                                                    })}
-                                                                />
-                                                            </div>
-                                                            <div className="col-span-2 text-right font-bold text-gray-700 text-[10px]">
-                                                                ₹{form.watch(`processCosts.${idx}.amount`)?.toFixed(2) || '0.00'}
-                                                            </div>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         </div>
@@ -1530,43 +1587,51 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                             </CardTitle>
                                         </CardHeader>
                                         <CardContent className="p-1.5">
-                                            <div className="space-y-2">
+                                            <div className="space-y-1.5">
+                                                {/* Additional Cost */}
                                                 <div className="space-y-0.5">
                                                     <div className="flex justify-between items-center text-[9px] font-bold text-gray-500">
                                                         <span>Add. Cost</span>
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-1">
-                                                        <div className="relative">
-                                                            <Input type="number" value={form.watch("additionalCostPercent")} onChange={e => handleAdditionalPercentChange(parseFloat(e.target.value) || 0)} className="h-7 pl-3 pr-1 bg-white text-[9px] w-full" placeholder="%" />
-                                                        </div>
-                                                        <div className="relative">
-                                                            <Input type="number" value={form.watch("additionalCostAmount")} onChange={e => handleAdditionalAmountChange(parseFloat(e.target.value) || 0)} className="h-7 pl-3 pr-1 font-bold text-gray-800 bg-white text-[9px] w-full" placeholder="Amt" />
-                                                        </div>
+                                                        <Input type="number" value={form.watch("additionalCostPercent")} onChange={e => handleAdditionalPercentChange(parseFloat(e.target.value) || 0)} className="h-6 pl-2 pr-1 bg-white text-[9px] w-full" placeholder="%" />
+                                                        <Input type="number" value={form.watch("additionalCostAmount")} onChange={e => handleAdditionalAmountChange(parseFloat(e.target.value) || 0)} className="h-6 pl-2 pr-1 font-bold text-gray-800 bg-white text-[9px] w-full" placeholder="₹" />
                                                     </div>
                                                 </div>
 
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <div className="space-y-0.5">
-                                                        <span className="text-[9px] font-bold text-gray-500 block truncate">Total</span>
-                                                        <div className="h-7 flex items-center px-1 bg-white rounded border border-gray-200 font-bold text-gray-700 text-[10px] truncate">
-                                                            ₹{form.watch("totalJobCost")}
-                                                        </div>
-                                                    </div>
-                                                    <div className="space-y-0.5">
-                                                        <span className="text-[9px] font-bold text-gray-500 block truncate">Unit</span>
-                                                        <div className="h-7 flex items-center px-1 bg-white rounded border border-gray-200 font-bold text-gray-700 text-[10px] truncate">
-                                                            ₹{form.watch("unitCost")}
-                                                        </div>
-                                                    </div>
+                                                {/* Total Job Cost */}
+                                                <div className="flex justify-between items-center py-1 border-t border-gray-200">
+                                                    <span className="text-[10px] font-bold text-gray-700">Total</span>
+                                                    <span className="text-[11px] font-bold text-gray-900">₹{form.watch("totalJobCost")?.toFixed(2)}</span>
                                                 </div>
 
-                                                <div className="space-y-0.5 pt-1 border-t border-gray-100">
-                                                    <div className="flex justify-between items-baseline mb-0.5">
-                                                        <span className="text-[9px] font-bold text-blue-800 capitalize">Final Price</span>
-                                                    </div>
-                                                    <Input type="number" step="any" className="h-7 w-full text-right font-bold border-blue-200 focus-visible:ring-blue-500 bg-white text-blue-700 text-xs px-2" {...form.register("finalSalesPrice", { valueAsNumber: true })} />
+                                                {/* Unit Cost */}
+                                                <div className="flex justify-between items-center py-0.5">
+                                                    <span className="text-[9px] font-bold text-gray-600">Unit</span>
+                                                    <span className="text-[10px] font-bold text-gray-800">₹{form.watch("unitCost")?.toFixed(2)}</span>
                                                 </div>
 
+                                                {/* Final Sales Price (Editable) */}
+                                                <div className="space-y-0.5 pt-1 border-t border-blue-100">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-[9px] font-bold text-green-700">Final Price</span>
+                                                        <span className="text-[8px] text-gray-400">(per unit)</span>
+                                                    </div>
+                                                    <Input type="number" step="any" className="h-7 w-full text-right font-bold border-green-300 focus-visible:ring-green-500 bg-green-50 text-green-800 text-xs px-2" {...form.register("finalSalesPrice", {
+                                                        valueAsNumber: true,
+                                                        onChange: (e) => {
+                                                            const price = parseFloat(e.target.value) || 0;
+                                                            const orderQty = form.getValues("orderQty") || 0;
+                                                            form.setValue("totalOrderValue", parseFloat((price * orderQty).toFixed(2)));
+                                                        }
+                                                    })} placeholder="Enter selling price" />
+                                                </div>
+
+                                                {/* Total Order Value */}
+                                                <div className="flex justify-between items-center py-1 bg-gradient-to-r from-green-50 to-blue-50 px-2 rounded -mx-1.5">
+                                                    <span className="text-[9px] font-bold text-green-800">Total Order Value</span>
+                                                    <span className="text-[11px] font-bold text-green-800">₹{form.watch("totalOrderValue")?.toFixed(2)}</span>
+                                                </div>
 
                                             </div>
                                         </CardContent>

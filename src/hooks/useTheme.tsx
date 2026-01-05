@@ -22,10 +22,10 @@ import {
 import { THEME_CONFIG, LocalThemeStorage, FONT_FAMILIES, FONT_SCALES } from '@/lib/theme/types'
 import { ThemeContext } from '@/contexts/ThemeContext'
 
-// Default theme
+// Default theme - ALWAYS LIGHT MODE
 const DEFAULT_THEME: Theme = {
     variant: 'default',
-    mode: 'light',
+    mode: 'light',  // Force light mode by default
     fontFamily: 'system',
     fontSize: 'normal',
     style: 'flat'
@@ -59,7 +59,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 export function useThemeState(
     defaultTheme: Theme = DEFAULT_THEME,
     storageKey: string = THEME_CONFIG.storageKey,
-    enableSystem: boolean = true
+    enableSystem: boolean = false  // Disable system theme preference - always use light mode
 ) {
     // 1. Lazy Initialization (synchronous read) to prevent race conditions
     const [theme, setThemeState] = useState<Theme>(() => {

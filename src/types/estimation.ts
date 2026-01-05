@@ -15,7 +15,8 @@ export const processCostSchema = z.object({
     quantity: z.coerce.number().min(0).default(0), // Calculated or Overridden
     rate: z.coerce.number().min(0),
     amount: z.coerce.number().min(0),
-    setupCharges: z.number().optional(), // New field for formula support
+    isManualQuantity: z.boolean().optional().default(false), // Track if user manually edited quantity
+    isManualRate: z.boolean().optional().default(false), // Track if user manually edited rate
 });
 
 export type ProcessCost = z.infer<typeof processCostSchema>;

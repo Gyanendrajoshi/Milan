@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { RollMasterForm } from "@/components/forms/roll-master-form";
 import { toast } from "sonner";
-import { mockPurchaseOrders } from "@/services/mock-data/purchase-orders";
+import { poStorage } from "@/services/po-storage";
 
 export default function RollMasterPage() {
   const [data, setData] = useState<RollMaster[]>([]);
@@ -76,8 +76,9 @@ export default function RollMasterPage() {
 
     // Referential Integrity Check
     // Check if this roll is used in any Purchase Order (Open or Closed)
-    const isUsedInPO = mockPurchaseOrders.some(po =>
-      po.items.some(item => item.itemCode === editingRoll.itemCode)
+    const allPOs = poStorage.getAll();
+    const isUsedInPO = allPOs.some((po: any) =>
+      po.items.some((item: any) => item.itemCode === editingRoll.itemCode)
     );
 
     if (isUsedInPO) {

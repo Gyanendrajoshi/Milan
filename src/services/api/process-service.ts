@@ -4,7 +4,7 @@ import { ProcessMaster } from "@/types/process-master";
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const getProcessMasterList = async (): Promise<ProcessMaster[]> => {
-    await delay(500);
+    // await delay(500); // Removed delay
     return processStorage.getAll();
 };
 

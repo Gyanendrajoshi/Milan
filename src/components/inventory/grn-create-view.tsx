@@ -6,7 +6,6 @@ import { GRNList } from "@/components/inventory/grn-list";
 import { GRNForm } from "@/components/forms/grn-form";
 import { BarcodePrintModal } from "@/components/inventory/barcode-print-modal";
 import { GRN } from "@/types/grn-master";
-import { mockGRNs } from "@/services/api/grn-service";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface GRNCreateViewProps {

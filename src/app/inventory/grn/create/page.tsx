@@ -7,7 +7,6 @@ import { PendingPOList } from "@/components/inventory/pending-po-list";
 import { GRNForm } from "@/components/forms/grn-form";
 import { BarcodePrintModal } from "@/components/inventory/barcode-print-modal";
 import { GRN } from "@/types/grn-master";
-import { mockGRNs } from "@/services/api/grn-service"; // To fetch last created? 
 // Actually createGRN mock returns the object in real app, but createGRN is void in previous code?
 // Let me check grn-form.tsx onSubmit. Ah, I made it call createGRN but didn't capture return.
 // I should update grn-form to return data via onSuccess? 
@@ -27,13 +26,12 @@ export default function GRNCreatePage() {
         setStep("form");
     };
 
-    const handleGRNSuccess = () => {
-        // Fetch the last created GRN to show in Modal
-        // In a real app, the API would return it.
-        // For Mock, we grab the first item from mockGRNs (since weunshifted)
-        const latest = mockGRNs[0];
-        setLastGRN(latest);
-        setShowBarcode(true);
+    const handleGRNSuccess = (grn: any) => {
+        // Use the passed GRN from the form success callback
+        if (grn) {
+            setLastGRN(grn);
+            setShowBarcode(true);
+        }
     };
 
     const handleModalClose = () => {
