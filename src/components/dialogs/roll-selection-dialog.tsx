@@ -18,17 +18,19 @@ export function RollSelectionDialog({ open, onOpenChange, onSelect }: RollSelect
     const [rolls, setRolls] = useState<RollMaster[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Load rolls from localStorage - Always load when component mounts
+    // Load rolls from localStorage - Load whenever dialog opens
     useEffect(() => {
-        const loadRolls = async () => {
-            setIsLoading(true);
-            const data = await getRolls();
-            console.log("Roll Dialog: Loaded rolls count:", data.length);
-            setRolls(data);
-            setIsLoading(false);
-        };
-        loadRolls();
-    }, []); // Load once on mount
+        if (open) {
+            const loadRolls = async () => {
+                setIsLoading(true);
+                const data = await getRolls();
+                console.log("Roll Dialog: Loaded rolls count:", data.length);
+                setRolls(data);
+                setIsLoading(false);
+            };
+            loadRolls();
+        }
+    }, [open]);
     const columns: ColumnDef<RollMaster>[] = useMemo(() => [
         {
             accessorKey: "itemCode",

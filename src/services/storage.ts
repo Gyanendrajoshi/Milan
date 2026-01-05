@@ -1,12 +1,13 @@
 import { EstimationFormValues } from "@/types/estimation";
 import { Estimation } from "@/app/estimation/estimation-columns";
-import { mockClients } from "./mock-data/clients";
+import { clientStorage } from "./storage/client-storage";
 
 const STORAGE_KEY = "MILAN_ESTIMATIONS";
 
 // Helper function to get client name by ID
 const getClientName = (clientId: string): string => {
-    const client = mockClients.find(c => c.id === clientId);
+    // Try to find in real storage first
+    const client = clientStorage.getById(clientId);
     return client?.clientName || "Unknown Client";
 };
 

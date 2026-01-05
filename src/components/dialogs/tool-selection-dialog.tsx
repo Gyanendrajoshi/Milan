@@ -20,17 +20,19 @@ export function ToolSelectionDialog({ open, onOpenChange, onSelect, typeFilter }
     const [tools, setTools] = useState<ToolMaster[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Load tools from localStorage - Always load when component mounts
+    // Load tools from localStorage - Load whenever dialog opens
     useEffect(() => {
-        const loadTools = async () => {
-            setIsLoading(true);
-            const data = await getTools();
-            console.log("Tool Dialog: Loaded tools count:", data.length);
-            setTools(data);
-            setIsLoading(false);
-        };
-        loadTools();
-    }, []); // Load once on mount
+        if (open) {
+            const loadTools = async () => {
+                setIsLoading(true);
+                const data = await getTools();
+                console.log("Tool Dialog: Loaded tools count:", data.length);
+                setTools(data);
+                setIsLoading(false);
+            };
+            loadTools();
+        }
+    }, [open]);
     const columns: ColumnDef<ToolMaster>[] = useMemo(() => {
         const defaultCols: ColumnDef<ToolMaster>[] = [
             {

@@ -29,7 +29,7 @@ export type ReturnRegisterRow = {
 export const getReturnColumns = (onDelete: (id: string) => void): ColumnDef<ReturnRegisterRow>[] => [
     {
         accessorKey: "issueId",
-        header: "ISSUE NUMBER",
+        header: "Issue Number",
         cell: ({ row }) => (
             <div className="space-y-0.5">
                 <div className="font-mono text-xs font-bold text-primary">
@@ -43,7 +43,7 @@ export const getReturnColumns = (onDelete: (id: string) => void): ColumnDef<Retu
     },
     {
         accessorKey: "itemDetails",
-        header: "ITEM DETAILS",
+        header: "Item Details",
         cell: ({ row }) => (
             <div className="space-y-0.5 max-w-[280px]">
                 <div className="text-xs font-medium text-foreground">
@@ -60,7 +60,7 @@ export const getReturnColumns = (onDelete: (id: string) => void): ColumnDef<Retu
     },
     {
         accessorKey: "clientSource",
-        header: "CLIENT / SOURCE",
+        header: "Client / Source",
         cell: ({ row }) => (
             <div className="space-y-0.5">
                 <div className="text-xs font-medium text-foreground">
@@ -74,7 +74,7 @@ export const getReturnColumns = (onDelete: (id: string) => void): ColumnDef<Retu
     },
     {
         accessorKey: "batchNo",
-        header: "BATCH",
+        header: "Batch",
         cell: ({ row }) => (
             <div className="font-mono text-xs text-foreground">
                 {row.original.batchNo}
@@ -83,7 +83,7 @@ export const getReturnColumns = (onDelete: (id: string) => void): ColumnDef<Retu
     },
     {
         accessorKey: "issuedQty",
-        header: "ISSUED QTY",
+        header: "Issued Qty",
         cell: ({ row }) => (
             <div className="text-xs text-muted-foreground">
                 {row.original.issuedQty.toLocaleString()} {row.original.uom}
@@ -92,7 +92,7 @@ export const getReturnColumns = (onDelete: (id: string) => void): ColumnDef<Retu
     },
     {
         accessorKey: "returnedQty",
-        header: "RETURNED QTY",
+        header: "Returned Qty",
         cell: ({ row }) => (
             <div className="text-xs font-bold text-green-600">
                 {row.original.returnedQty.toLocaleString()} {row.original.uom}
@@ -101,7 +101,7 @@ export const getReturnColumns = (onDelete: (id: string) => void): ColumnDef<Retu
     },
     {
         accessorKey: "qualityStatus",
-        header: "QUALITY STATUS",
+        header: "Quality Status",
         cell: ({ row }) => {
             const status = row.original.qualityStatus;
             const variant =
@@ -118,7 +118,7 @@ export const getReturnColumns = (onDelete: (id: string) => void): ColumnDef<Retu
     },
     {
         accessorKey: "returnReason",
-        header: "RETURN REASON",
+        header: "Return Reason",
         cell: ({ row }) => (
             <div className="text-xs text-muted-foreground max-w-[150px] truncate">
                 {row.original.returnReason || '-'}
@@ -127,7 +127,7 @@ export const getReturnColumns = (onDelete: (id: string) => void): ColumnDef<Retu
     },
     {
         id: "actions",
-        header: "ACTION",
+        header: "Action",
         cell: ({ row }) => (
             <Button
                 variant="ghost"

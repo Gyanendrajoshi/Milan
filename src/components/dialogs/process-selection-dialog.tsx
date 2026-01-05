@@ -23,17 +23,19 @@ export function ProcessSelectionDialog({ open, onOpenChange, onSelect, preSelect
     const [processes, setProcesses] = useState<ProcessMaster[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Load processes from localStorage - Always load when component mounts
+    // Load processes from localStorage - Load whenever dialog opens
     useEffect(() => {
-        const loadProcesses = async () => {
-            setIsLoading(true);
-            const data = await getProcessMasterList();
-            console.log("Process Dialog: Loaded processes count:", data.length);
-            setProcesses(data);
-            setIsLoading(false);
-        };
-        loadProcesses();
-    }, []); // Load once on mount
+        if (open) {
+            const loadProcesses = async () => {
+                setIsLoading(true);
+                const data = await getProcessMasterList();
+                console.log("Process Dialog: Loaded processes count:", data.length);
+                setProcesses(data);
+                setIsLoading(false);
+            };
+            loadProcesses();
+        }
+    }, [open]);
 
     // Sync pre-selected IDs when dialog opens
     useEffect(() => {

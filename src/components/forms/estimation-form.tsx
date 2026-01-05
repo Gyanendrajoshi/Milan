@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray } from "react-hook-form";
 import { format } from "date-fns";
@@ -560,8 +560,9 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
 
     // Central Recalculation Handler
     // Call this whenever a dependency changes (Qty, Ups, Size, Roll, Processes, Wastage)
-    const recalculateAll = (fieldChanged?: string, value?: any) => {
+    const recalculateAll = useCallback((fieldChanged?: string, value?: any) => {
         const values = form.getValues();
+        const toolCircumference = values.toolCircumferenceMM ? parseFloat(values.toolCircumferenceMM as any) : 0;
 
         // 1. Prepare Inputs
         const inputs = {
@@ -573,7 +574,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
             rollGSM: values.rollTotalGSM || 0,
             wastagePercent: values.wastagePercent,
             wastageRM: values.wastageRM,
-            tool: selectedTool ? { circumferenceMM: selectedTool.circumferenceMM } : undefined
+            tool: toolCircumference > 0 ? { circumferenceMM: toolCircumference } : undefined
         };
 
         // Skip calculation silently if critical data is missing (user still filling form)
@@ -586,10 +587,8 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
             form.setValue("totalRunningMtr", 0);
             form.setValue("totalSqMtr", 0);
             form.setValue("totalKg", 0);
-            form.setValue("materialCostAmount", 0);
+            // form.setValue("materialCostAmount", 0); // Keep old amount? No, reset.
             form.setValue("totalJobCost", 0);
-            form.setValue("unitCost", 0);
-            form.setValue("finalPriceWithGST", 0);
             return; // Exit early without error
         }
 
@@ -687,7 +686,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                 console.error("Calculation error:", error);
             }
         }
-    };
+    }, [form]);
 
     // Explicit Trigger Handlers (Attached to Inputs via onChange/onBlur)
     const handleCalcTrigger = (field: string, val: any) => {
@@ -859,7 +858,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
     }
 
     // Handlers
-    const handleToolSelect = (tool: any) => {
+    const handleToolSelect = useCallback((tool: any) => {
         setSelectedTool(tool);
         setValue("toolId", tool.id);
         setValue("toolTeeth", tool.noOfTeeth);
@@ -868,15 +867,15 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
         setToolDialogOpen(false);
         // Trigger recalc logic since tool changed
         setTimeout(() => recalculateAll("toolId"), 50);
-    };
+    }, [setValue, recalculateAll]);
 
-    const handleDieSelect = (die: any) => {
+    const handleDieSelect = useCallback((die: any) => {
         setSelectedDie(die);
         setValue("dieId", die.id);
         setDieDialogOpen(false);
-    };
+    }, [setValue]);
 
-    const handleRollSelect = (roll: any) => {
+    const handleRollSelect = useCallback((roll: any) => {
         // Validate roll data for suspicious values
         if (roll.rollWidthMM < 100) {
             toast.warning("Suspiciously Small Roll Width!", {
@@ -897,9 +896,9 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
         setRollDialogOpen(false);
         // Trigger recalc logic since roll changed
         setTimeout(() => recalculateAll("rollId"), 50);
-    };
+    }, [setValue, recalculateAll]);
 
-    const handleProcessSelect = (selectedIds: string[]) => {
+    const handleProcessSelect = useCallback((selectedIds: string[]) => {
         // Find newly added processes to update form array
         const processes = mockProcesses.filter(p => selectedIds.includes(p.id));
         setSelectedProcesses(processes);
@@ -928,7 +927,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
         setProcessDialogOpen(false);
         // Recalc
         setTimeout(() => recalculateAll("processCosts"), 50);
-    };
+    }, [setValue, recalculateAll, getValues, mockProcesses]);
 
     // Explicit Handlers for Calculation Drivers
     const handleWastagePercentChange = (val: number) => {
@@ -1685,10 +1684,10 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                 </form>
             </Form>
 
-            <ToolSelectionDialog key={`tool-${toolDialogKey}`} open={toolDialogOpen} onOpenChange={setToolDialogOpen} onSelect={handleToolSelect} />
-            <ToolSelectionDialog key={`die-${dieDialogKey}`} open={dieDialogOpen} onOpenChange={setDieDialogOpen} onSelect={handleDieSelect} typeFilter="FLEXO DIE" />
-            <RollSelectionDialog key={`roll-${rollDialogKey}`} open={rollDialogOpen} onOpenChange={setRollDialogOpen} onSelect={handleRollSelect} />
-            <ProcessSelectionDialog key={`process-${processDialogKey}`} open={processDialogOpen} onOpenChange={setProcessDialogOpen} onSelect={handleProcessSelect} preSelectedIds={form.watch("processIds")} />
+            <ToolSelectionDialog open={toolDialogOpen} onOpenChange={setToolDialogOpen} onSelect={handleToolSelect} />
+            <ToolSelectionDialog open={dieDialogOpen} onOpenChange={setDieDialogOpen} onSelect={handleDieSelect} typeFilter="FLEXO DIE" />
+            <RollSelectionDialog open={rollDialogOpen} onOpenChange={setRollDialogOpen} onSelect={handleRollSelect} />
+            <ProcessSelectionDialog open={processDialogOpen} onOpenChange={setProcessDialogOpen} onSelect={handleProcessSelect} preSelectedIds={form.watch("processIds")} />
         </div >
     );
 };
