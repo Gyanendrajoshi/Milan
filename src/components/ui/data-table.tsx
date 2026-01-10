@@ -72,6 +72,7 @@ interface DataTableProps<TData, TValue> {
     onSearch?: (value: string) => void
     toolbarExtras?: React.ReactNode
     gridId?: string
+    isLoading?: boolean
 }
 
 const downloadCSV = (data: any[], filename = 'export.csv') => {
@@ -112,6 +113,7 @@ export function DataTable<TData, TValue>({
     getRowId,
     toolbarExtras,
     gridId,
+    isLoading = false,
 }: DataTableProps<TData, TValue>) {
     const { settings, updateColumnVisibility, updateSortingState, updateFilterState, updatePageSize, updateViewMode, saveSettings, clearSettings } = useGridSettings(gridId ?? '')
 
@@ -120,9 +122,11 @@ export function DataTable<TData, TValue>({
     const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
     const [viewMode, setViewMode] = React.useState<"grid" | "card">("grid")
     const [hasLoadedSettings, setHasLoadedSettings] = React.useState(false)
+    const [mounted, setMounted] = React.useState(false)
 
     // Load settings on mount
     React.useEffect(() => {
+        setMounted(true)
         if (gridId && settings && !hasLoadedSettings) {
             if (settings.sortingState?.length) setSorting(settings.sortingState)
             if (settings.filterState?.length) setColumnFilters(settings.filterState)
@@ -234,76 +238,82 @@ export function DataTable<TData, TValue>({
                             </div>
                         )}
 
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="outline" size="sm" className="h-9 w-9 p-0 bg-background shrink-0 ml-auto sm:ml-0">
-                                    <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-[200px]">
-                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => downloadCSV(table.getFilteredRowModel().rows.map(row => row.original))}>
-                                    <Download className="mr-2 h-4 w-4" /> Export CSV
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => {
-                                    if (confirm('Are you sure you want to reset all table settings to default?')) {
-                                        clearSettings()
-                                        setSorting([])
-                                        setColumnFilters([])
-                                        setColumnVisibility({})
-                                        setViewMode(disableResponsive ? "grid" : (window.innerWidth < 768 ? "card" : "grid"))
-                                        table.setPageSize(hidePagination ? 10000 : 100)
-                                        if (onSearch) onSearch("")
-                                        else if (searchKey) table.getColumn(searchKey)?.setFilterValue("")
-                                    }
-                                }}>
-                                    <RotateCcw className="mr-2 h-4 w-4" /> Reset Settings
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuLabel>View</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => setViewMode("grid")}>
-                                    <List className="mr-2 h-4 w-4" />
-                                    Grid View
-                                    {viewMode === 'grid' && <Check className="ml-auto h-4 w-4" />}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setViewMode("card")}>
-                                    <LayoutGrid className="mr-2 h-4 w-4" />
-                                    Card View
-                                    {viewMode === 'card' && <Check className="ml-auto h-4 w-4" />}
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuSub>
-                                    <DropdownMenuSubTrigger>
-                                        <Settings2 className="mr-2 h-4 w-4" />
-                                        Columns
-                                    </DropdownMenuSubTrigger>
-                                    <DropdownMenuSubContent className="w-[200px] max-h-[300px] overflow-y-auto">
-                                        <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
-                                        <DropdownMenuSeparator />
-                                        {table
-                                            .getAllColumns()
-                                            .filter(
-                                                (column) =>
-                                                    typeof column.accessorFn !== "undefined" && column.getCanHide()
-                                            )
-                                            .map((column) => {
-                                                return (
-                                                    <DropdownMenuCheckboxItem
-                                                        key={column.id}
-                                                        className="capitalize"
-                                                        checked={column.getIsVisible()}
-                                                        onCheckedChange={(value) => column.toggleVisibility(!!value)}
-                                                    >
-                                                        {column.id}
-                                                    </DropdownMenuCheckboxItem>
+                        {mounted ? (
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" size="sm" className="h-9 w-9 p-0 bg-background shrink-0 ml-auto sm:ml-0">
+                                        <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-[200px]">
+                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onClick={() => downloadCSV(table.getFilteredRowModel().rows.map(row => row.original))}>
+                                        <Download className="mr-2 h-4 w-4" /> Export CSV
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => {
+                                        if (confirm('Are you sure you want to reset all table settings to default?')) {
+                                            clearSettings()
+                                            setSorting([])
+                                            setColumnFilters([])
+                                            setColumnVisibility({})
+                                            setViewMode(disableResponsive ? "grid" : (window.innerWidth < 768 ? "card" : "grid"))
+                                            table.setPageSize(hidePagination ? 10000 : 100)
+                                            if (onSearch) onSearch("")
+                                            else if (searchKey) table.getColumn(searchKey)?.setFilterValue("")
+                                        }
+                                    }}>
+                                        <RotateCcw className="mr-2 h-4 w-4" /> Reset Settings
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuLabel>View</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onClick={() => setViewMode("grid")}>
+                                        <List className="mr-2 h-4 w-4" />
+                                        Grid View
+                                        {viewMode === 'grid' && <Check className="ml-auto h-4 w-4" />}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => setViewMode("card")}>
+                                        <LayoutGrid className="mr-2 h-4 w-4" />
+                                        Card View
+                                        {viewMode === 'card' && <Check className="ml-auto h-4 w-4" />}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuSub>
+                                        <DropdownMenuSubTrigger>
+                                            <Settings2 className="mr-2 h-4 w-4" />
+                                            Columns
+                                        </DropdownMenuSubTrigger>
+                                        <DropdownMenuSubContent className="w-[200px] max-h-[300px] overflow-y-auto">
+                                            <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
+                                            <DropdownMenuSeparator />
+                                            {table
+                                                .getAllColumns()
+                                                .filter(
+                                                    (column) =>
+                                                        typeof column.accessorFn !== "undefined" && column.getCanHide()
                                                 )
-                                            })}
-                                    </DropdownMenuSubContent>
-                                </DropdownMenuSub>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                                                .map((column) => {
+                                                    return (
+                                                        <DropdownMenuCheckboxItem
+                                                            key={column.id}
+                                                            className="capitalize"
+                                                            checked={column.getIsVisible()}
+                                                            onCheckedChange={(value) => column.toggleVisibility(!!value)}
+                                                        >
+                                                            {column.id}
+                                                        </DropdownMenuCheckboxItem>
+                                                    )
+                                                })}
+                                        </DropdownMenuSubContent>
+                                    </DropdownMenuSub>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        ) : (
+                            <Button variant="outline" size="sm" className="h-9 w-9 p-0 bg-background shrink-0 ml-auto sm:ml-0 opacity-50 cursor-wait">
+                                <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                        )}
                     </div>
                 </div>
             )}
@@ -312,16 +322,16 @@ export function DataTable<TData, TValue>({
                 <div className="absolute inset-0 overflow-auto">
                     {viewMode === "grid" ? (
                         <Table>
-                            <TableHeader className="bg-tertiary/20 sticky top-0 z-20 shadow-sm backdrop-blur-sm">
+                            <TableHeader className="bg-primary/5 sticky top-0 z-20 shadow-sm backdrop-blur-sm">
                                 {table.getHeaderGroups().map((headerGroup) => (
                                     <React.Fragment key={headerGroup.id}>
-                                        <TableRow className="border-b border-border hover:bg-transparent">
+                                        <TableRow className="border-b border-primary/10 hover:bg-transparent">
                                             {headerGroup.headers.map((header) => {
                                                 const isSorted = header.column.getIsSorted()
                                                 return (
                                                     <TableHead
                                                         key={header.id}
-                                                        className="text-foreground font-bold text-[11px] tracking-wider h-7 px-2 cursor-pointer select-none"
+                                                        className="text-black font-bold text-[11px] tracking-wider h-7 px-2 cursor-pointer select-none hover:bg-primary/10 transition-colors"
                                                         onClick={header.column.getToggleSortingHandler()}
                                                     >
                                                         <div className="flex items-center gap-1">
@@ -348,9 +358,9 @@ export function DataTable<TData, TValue>({
                                             })}
                                         </TableRow>
                                         {/* Filter Row */}
-                                        <TableRow className="bg-muted/30 hover:bg-transparent border-b border-border">
+                                        <TableRow className="bg-primary/[0.02] hover:bg-transparent border-b border-primary/5">
                                             {headerGroup.headers.map((header) => (
-                                                <TableHead key={`${header.id}-filter`} className="p-1 h-auto">
+                                                <TableHead key={`${header.id}-filter`} className="p-1 h-auto border-r border-primary/5 last:border-r-0">
                                                     {header.column.getCanFilter() ? (
                                                         <Input
                                                             placeholder="Search..."
@@ -358,7 +368,7 @@ export function DataTable<TData, TValue>({
                                                             onChange={(event) =>
                                                                 header.column.setFilterValue(event.target.value)
                                                             }
-                                                            className="h-6 text-[11px] px-1 bg-background"
+                                                            className="h-6 text-[11px] px-1 bg-background border-primary/10 focus-visible:ring-primary/20"
                                                         />
                                                     ) : null}
                                                 </TableHead>
@@ -470,8 +480,27 @@ export function DataTable<TData, TValue>({
                             )}
                         </div>
                     )}
+
+                    {isLoading && (
+                        <div className="absolute inset-0 bg-white/50 z-10 flex items-center justify-center">
+                            <div className="flex flex-col items-center gap-2">
+                                <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+                                <span className="text-xs font-medium text-primary">Loading Data...</span>
+                            </div>
+                        </div>
+                    )}
                 </div>
+
+                {isLoading && (
+                    <div className="absolute inset-0 bg-white/50 z-10 flex items-center justify-center">
+                        <div className="flex flex-col items-center gap-2">
+                            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+                            <span className="text-xs font-medium text-primary">Loading Data...</span>
+                        </div>
+                    </div>
+                )}
             </div>
+
             {!hidePagination && (
                 <div className="flex items-center justify-between px-2 flex-none py-2">
                     <div className="flex-1 text-sm text-muted-foreground hidden">
@@ -481,25 +510,27 @@ export function DataTable<TData, TValue>({
                     <div className="flex items-center space-x-6 lg:space-x-8">
                         <div className="flex items-center space-x-2">
                             <p className="text-sm font-medium">Rows per page</p>
-                            <Select
-                                value={`${table.getState().pagination.pageSize}`}
-                                onValueChange={(value) => {
-                                    const newSize = Number(value)
-                                    table.setPageSize(newSize)
-                                    if (gridId) updatePageSize(newSize) // Sync page size change
-                                }}
-                            >
-                                <SelectTrigger className="h-8 w-[70px]">
-                                    <SelectValue placeholder={table.getState().pagination.pageSize} />
-                                </SelectTrigger>
-                                <SelectContent side="top">
-                                    {[100, 500, 1000].map((pageSize) => (
-                                        <SelectItem key={pageSize} value={`${pageSize}`}>
-                                            {pageSize}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            {mounted && (
+                                <Select
+                                    value={`${table.getState().pagination.pageSize}`}
+                                    onValueChange={(value) => {
+                                        const newSize = Number(value)
+                                        table.setPageSize(newSize)
+                                        if (gridId) updatePageSize(newSize) // Sync page size change
+                                    }}
+                                >
+                                    <SelectTrigger className="h-8 w-[70px]">
+                                        <SelectValue placeholder={table.getState().pagination.pageSize} />
+                                    </SelectTrigger>
+                                    <SelectContent side="top">
+                                        {[100, 500, 1000].map((pageSize) => (
+                                            <SelectItem key={pageSize} value={`${pageSize}`}>
+                                                {pageSize}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            )}
                         </div>
                         <div className="flex w-[100px] items-center justify-center text-sm font-medium">
                             Page {table.getState().pagination.pageIndex + 1} of{" "}

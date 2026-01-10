@@ -1,6 +1,5 @@
 "use client";
 
-import { ThemeCustomizer } from "@/components/theme-customizer";
 import React, { useState, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -18,7 +17,6 @@ import {
   Tag,
   ChevronLeft,
   ChevronRight,
-  Menu,
   ChevronDown,
   Calculator,
   Bell,
@@ -28,10 +26,10 @@ import {
   Archive,
   PackageMinus,
   Factory,
-  Truck
+  Truck,
+  Scissors
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import {
@@ -72,6 +70,11 @@ const inventoryItems: NavItem[] = [
     title: "Material Return",
     href: "/inventory/return",
     icon: PackageMinus,
+  },
+  {
+    title: "Jumbo Roll Slitting",
+    href: "/inventory/slitting",
+    icon: Scissors,
   },
 ];
 
@@ -251,7 +254,7 @@ export function Sidebar({ isCollapsed = false, onToggle, onItemClick }: SidebarP
               "flex items-center gap-2 rounded-lg py-2 text-sm font-medium transition-all group",
               isCollapsed ? "justify-center px-0" : "px-3",
               pathname === "/"
-                ? "bg-white text-blue-600 shadow-lg shadow-black/10"
+                ? "bg-white dark:bg-white/90 text-blue-600 dark:text-blue-500 shadow-lg shadow-black/10"
                 : "text-white/70 hover:bg-white/10 hover:text-white"
             )}
           >
@@ -268,7 +271,7 @@ export function Sidebar({ isCollapsed = false, onToggle, onItemClick }: SidebarP
               "flex items-center gap-2 rounded-lg py-2 text-sm font-medium transition-all group",
               isCollapsed ? "justify-center px-0" : "px-3",
               pathname === "/estimation"
-                ? "bg-white text-blue-600 shadow-lg shadow-black/10"
+                ? "bg-white dark:bg-white/90 text-blue-600 dark:text-blue-500 shadow-lg shadow-black/10"
                 : "text-white/70 hover:bg-white/10 hover:text-white"
             )}
           >
@@ -285,7 +288,7 @@ export function Sidebar({ isCollapsed = false, onToggle, onItemClick }: SidebarP
               "flex items-center gap-2 rounded-lg py-2 text-sm font-medium transition-all group",
               isCollapsed ? "justify-center px-0" : "px-3",
               pathname.startsWith("/production")
-                ? "bg-white text-blue-600 shadow-lg shadow-black/10"
+                ? "bg-white dark:bg-white/90 text-blue-600 dark:text-blue-500 shadow-lg shadow-black/10"
                 : "text-white/70 hover:bg-white/10 hover:text-white"
             )}
           >
@@ -302,15 +305,13 @@ export function Sidebar({ isCollapsed = false, onToggle, onItemClick }: SidebarP
               "flex items-center gap-2 rounded-lg py-2 text-sm font-medium transition-all group",
               isCollapsed ? "justify-center px-0" : "px-3",
               pathname.startsWith("/dispatch")
-                ? "bg-white text-blue-600 shadow-lg shadow-black/10"
+                ? "bg-white dark:bg-white/90 text-blue-600 dark:text-blue-500 shadow-lg shadow-black/10"
                 : "text-white/70 hover:bg-white/10 hover:text-white"
             )}
           >
             <Truck className="h-4 w-4" />
             {!isCollapsed && <span>Dispatch</span>}
           </Link>
-
-          <Separator className="my-3 bg-white/20" />
 
           {/* Inventory Section */}
           {isCollapsed ? (
@@ -377,7 +378,7 @@ export function Sidebar({ isCollapsed = false, onToggle, onItemClick }: SidebarP
                       className={cn(
                         "flex items-center gap-2 rounded-lg py-2 text-sm transition-all pl-8 px-3",
                         isActive
-                          ? "bg-white font-medium text-blue-600 shadow-lg shadow-black/10"
+                          ? "bg-white dark:bg-white/90 font-medium text-blue-600 dark:text-blue-500 shadow-lg shadow-black/10"
                           : "text-white/70 hover:bg-white/10 hover:text-white"
                       )}
                     >
@@ -389,8 +390,6 @@ export function Sidebar({ isCollapsed = false, onToggle, onItemClick }: SidebarP
               </CollapsibleContent>
             </Collapsible>
           )}
-
-          <Separator className="my-3 bg-white/20" />
 
           {/* Masters Section */}
           {isCollapsed ? (
@@ -457,7 +456,7 @@ export function Sidebar({ isCollapsed = false, onToggle, onItemClick }: SidebarP
                       className={cn(
                         "flex items-center gap-2 rounded-lg py-2 text-sm transition-all pl-8 px-3",
                         isActive
-                          ? "bg-white font-medium text-blue-600 shadow-lg shadow-black/10"
+                          ? "bg-white dark:bg-white/90 font-medium text-blue-600 dark:text-blue-500 shadow-lg shadow-black/10"
                           : "text-white/70 hover:bg-white/10 hover:text-white",
                         item.priority && !isActive && "text-white/90"
                       )}
@@ -488,11 +487,11 @@ export function Sidebar({ isCollapsed = false, onToggle, onItemClick }: SidebarP
               <Button variant="ghost" size="icon" className="h-6 w-6 text-white/70 hover:text-white" title="Notifications">
                 <Bell className="h-3 w-3" />
               </Button>
-              <ThemeCustomizer>
+              <Link href="/settings" onClick={onItemClick}>
                 <Button variant="ghost" size="icon" className="h-6 w-6 text-white/70 hover:text-white" title="Settings">
                   <Settings className="h-3 w-3" />
                 </Button>
-              </ThemeCustomizer>
+              </Link>
             </div>
           </div>
         ) : (
@@ -500,11 +499,11 @@ export function Sidebar({ isCollapsed = false, onToggle, onItemClick }: SidebarP
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-xs font-bold text-blue-600 shadow-md cursor-pointer" title="John Doe">
               JD
             </div>
-            <ThemeCustomizer>
+            <Link href="/settings" onClick={onItemClick}>
               <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white" title="Settings">
                 <Settings className="h-4 w-4" />
               </Button>
-            </ThemeCustomizer>
+            </Link>
           </div>
         )}
       </div>

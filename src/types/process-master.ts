@@ -5,7 +5,7 @@ export interface ProcessMaster {
     chargeType: string; // Dynamic but stored as string
     isUnitConversion: boolean;
     rate: number;
-    setupCharges?: number; // Fixed cost added to calculation
+    formulaParams?: string; // JSON String for advanced configs
 }
 
 export type ChargeType = {
@@ -29,4 +29,5 @@ export const MOCK_CHARGE_TYPES: ChargeType[] = [
     { id: "11", label: "Rate/Sq.Meter", value: "rate_per_sq_meter" },
     { id: "12", label: "Rate/Sq.CM", value: "rate_per_sq_cm" },
     { id: "13", label: "Rate/Meter", value: "rate_per_meter" },
+    { id: "14", label: "Printing (Advanced)", value: "printing_advanced" },
 ];

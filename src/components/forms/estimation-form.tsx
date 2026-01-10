@@ -8,7 +8,10 @@ import { Plus, Trash2, Search, Calculator, Save, ArrowLeft, ArrowDownCircle, Loa
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { storage } from "@/services/storage";
+import { createEstimation, updateEstimation } from "@/services/api/estimation-service";
 import { EstimationCalculator } from "@/lib/calculators/estimation-calculator";
+import { getRollById } from "@/services/api/roll-service";
+import { getToolById } from "@/services/api/tool-service";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -119,23 +122,8 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
     const [selectedDie, setSelectedDie] = useState<any>(null);
     const [selectedRoll, setSelectedRoll] = useState<any>(null);
     const [selectedProcesses, setSelectedProcesses] = useState<any[]>([]);
-    // Generate Job No: JC + 5 digits + - + YY (e.g. JC00001-25)
-    const [jobNo, setJobNo] = useState(() => {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth(); // 0-11
-        // Financial Year Logic (Apr-Mar)
-        let fyStart = year;
-        let fyEnd = year + 1;
-        if (month < 3) { // Jan-Mar
-            fyStart = year - 1;
-            fyEnd = year;
-        }
-        const fyString = `${fyStart.toString().slice(-2)}-${fyEnd.toString().slice(-2)}`;
-
-        const randomNum = Math.floor(Math.random() * 100000).toString().padStart(5, '0');
-        return `JC${randomNum}/${fyString}`;
-    });
+    // Generate Job No: Backend will handle this if empty
+    const [jobNo, setJobNo] = useState("");
 
     // Content Edit State
     const [editingContentId, setEditingContentId] = useState<number | null>(null);
@@ -146,7 +134,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
             date: new Date(),
             clientId: "",
             // Map List Data to Form
-            jobCardNo: initialData?.jobCardNo || jobNo,
+            jobCardNo: initialData?.jobCardNo || "",
             jobName: initialData?.jobName || "",
             // client: initialData?.client // We need clientId, but list has client Name.
             // For now, we leave clientId empty or try to match? 
@@ -157,7 +145,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
 
             jobPriority: "Medium",
             jobType: "New Job",
-            orderQty: initialData?.quantity || 0,
+            orderQty: initialData?.orderQty || 0,
             category: "",
             contentName: "",
             jobWidthMM: 0,
@@ -204,7 +192,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
             rollTotalGSM: undefined,
             machineName: undefined,
             dieId: undefined,
-            contents: (initialData as any)?.contents || [],
+            contents: (initialData as any)?.content || (initialData as any)?.contents || [],
         },
     });
 
@@ -235,7 +223,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
             toolId: values.toolId,
             toolTeeth: values.toolTeeth,
             toolCircumferenceMM: values.toolCircumferenceMM,
-            toolCircumferenceInch: values.toolCircumferenceInch,
+            toolCircumferenceInch: values.toolCircumferenceInch || 0,
             dieId: values.dieId,
             rollId: values.rollId,
             rollWidthMM: values.rollWidthMM,
@@ -303,8 +291,16 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
         form.setValue("rollId", undefined);
         form.setValue("rollWidthMM", undefined);
         form.setValue("rollTotalGSM", undefined);
-        setSelectedProcesses([]);
-        form.setValue("processIds", []);
+
+        // Reset Processes with Category Logic
+        form.setValue("processCosts", []); // Clear first to ensure fresh defaults
+        const currentCat = categories.find(c => c.id === values.category);
+        if (currentCat && currentCat.processIds?.length) {
+            handleProcessSelect(currentCat.processIds);
+        } else {
+            setSelectedProcesses([]);
+            form.setValue("processIds", []);
+        }
         // Reset Calculations
         form.setValue("baseRunningMtr", 0);
         form.setValue("baseSqMtr", 0);
@@ -316,7 +312,6 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
         form.setValue("totalKg", 0);
         form.setValue("materialCostAmount", 0);
         // Reset ALL Costing Fields
-        form.setValue("processCosts", []);
         form.setValue("additionalCostPercent", 0);
         form.setValue("additionalCostAmount", 0);
         form.setValue("totalJobCost", 0);
@@ -325,13 +320,6 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
         form.setValue("totalOrderValue", 0);
         // Reset Material Rate to 0 to be safe
         form.setValue("materialRate", 0);
-        form.setValue("processCosts", []);
-        form.setValue("additionalCostPercent", 0);
-        form.setValue("additionalCostAmount", 0);
-        form.setValue("totalJobCost", 0);
-        form.setValue("unitCost", 0);
-        form.setValue("finalSalesPrice", 0);
-        form.setValue("totalOrderValue", 0);
     };
 
     const handleEditContent = (content: any) => {
@@ -360,29 +348,34 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
         // Tool
         if (content.toolId) {
             form.setValue("toolId", content.toolId);
-            form.setValue("toolTeeth", content.toolTeeth);
+            form.setValue("toolTeeth", content.toolTeeth); // Ensure these exist in content
             form.setValue("toolCircumferenceMM", content.toolCircumferenceMM);
             form.setValue("toolCircumferenceInch", content.toolCircumferenceInch);
-            // Mock object for UI display
+
+            // Hydrate UI State
             setSelectedTool({
                 id: content.toolId,
-                noOfTeeth: content.toolTeeth,
+                toolName: "Loaded Tool", // Placeholder
+                noOfTeeth: content.toolTeeth, // MATCH UI EXPECTATION
                 circumferenceMM: content.toolCircumferenceMM,
-                toolName: "Loaded Tool" // simplified
+                circumferenceInch: content.toolCircumferenceInch,
             });
         }
 
-        // Roll - we need Purchase Rate etc.
+        // Roll
         if (content.rollId) {
             form.setValue("rollId", content.rollId);
             form.setValue("rollWidthMM", content.rollWidthMM);
             form.setValue("rollTotalGSM", content.rollTotalGSM);
-            // We might miss detail props not in content... assuming content has required Calc fields
+
+            // Hydrate UI State
             setSelectedRoll({
                 id: content.rollId,
-                itemName: "Loaded Roll", // simplified
+                itemName: "Loaded Roll", // Placeholder
                 rollWidthMM: content.rollWidthMM,
-                totalGSM: content.rollTotalGSM
+                faceGSM: content.rollTotalGSM, // MATCH UI EXPECTATION
+                totalGSM: content.rollTotalGSM, // Keep both if needed
+                purchaseUnit: "KG" // Default
             });
         }
 
@@ -405,7 +398,36 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
         form.setValue("additionalCostPercent", content.additionalCostPercent);
         form.setValue("additionalCostAmount", content.additionalCostAmount);
 
+        // Create temporary objects for calculation override
+        let toolObj: any = undefined;
+        let rollObj: any = undefined;
+
+        // Tool
+        if (content.toolId) {
+            toolObj = {
+                id: content.toolId,
+                noOfTeeth: content.toolTeeth,
+                circumferenceMM: content.toolCircumferenceMM,
+                circumferenceInch: content.toolCircumferenceInch,
+            };
+        }
+
+        // Roll
+        if (content.rollId) {
+            rollObj = {
+                id: content.rollId,
+                rollWidthMM: content.rollWidthMM,
+                totalGSM: content.rollTotalGSM,
+                purchaseUnit: "KG" // Default for now if not in content, or derive logic
+            };
+        }
+
         toast.info("Content loaded for editing");
+
+        // Force validation and recalculation to ensure Summary is correct
+        setTimeout(() => {
+            recalculateAll(undefined, undefined, rollObj, toolObj);
+        }, 100);
 
         // Scroll to Top of Jobs
         const element = document.getElementById("job-details-top");
@@ -413,23 +435,9 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
     };
 
     // --- Load Master Data ---
-    useEffect(() => {
-        const loadMasters = async () => {
-            try {
-                const [clientsData, catsData, procsData] = await Promise.all([
-                    getClients(),
-                    getCategories(),
-                    getProcessMasterList()
-                ]);
-                setClients(clientsData);
-                setCategories(catsData);
-                setMockProcesses(procsData);
-            } catch (error) {
-                console.error("Error loading masters:", error);
-            }
-        };
-        loadMasters();
-    }, []);
+    // --- Load Master Data (Duplicate removed) ---
+    // The main master data loading happens at lines 82-112.
+    // Removing this duplicate block to prevent race conditions.
 
     // --- Load Initial Data for Edit Mode ---
     useEffect(() => {
@@ -446,12 +454,12 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                 deliveryDate: fullData.deliveryDate ? new Date(fullData.deliveryDate) : undefined,
                 // Ensure all fields are populated
                 jobCardNo: fullData.jobCardNo || jobNo,
-                clientId: fullData.clientId || "",
+                clientId: fullData.clientId ? String(fullData.clientId) : "",
                 jobName: fullData.jobName || "",
-                orderQty: initialData.quantity || fullData.orderQty || 0,
-                category: fullData.category || "",
+                orderQty: initialData.orderQty || fullData.orderQty || 0,
+                category: fullData.categoryId ? String(fullData.categoryId) : "",
                 poNumber: fullData.poNumber || "",
-                salesPerson: fullData.salesPerson || "",
+                salesPerson: fullData.salesPersonName || fullData.salesPerson || "",
                 jobPriority: fullData.jobPriority || "Medium",
                 jobType: fullData.jobType || "New Job",
 
@@ -502,26 +510,66 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                 totalOrderValue: fullData.totalOrderValue || 0,
 
                 // Contents (if any)
-                contents: fullData.contents || [],
+                contents: fullData.content || fullData.contents || [],
             } as any);
 
             // Set selected states for UI
             if (fullData.toolId) {
-                // Tool data should be in initialData
-                setSelectedTool({
-                    id: fullData.toolId,
-                    teeth: fullData.toolTeeth,
-                    circumferenceMM: fullData.toolCircumferenceMM,
-                    circumferenceInch: fullData.toolCircumferenceInch,
+                // Fetch complete tool data from API
+                getToolById(String(fullData.toolId)).then(toolData => {
+                    if (toolData) {
+                        setSelectedTool({
+                            ...toolData,
+                            noOfTeeth: fullData.toolTeeth || toolData.noOfTeeth,
+                            circumferenceMM: fullData.toolCircumferenceMM || toolData.circumferenceMM,
+                            circumferenceInch: fullData.toolCircumferenceInch || toolData.circumferenceInch,
+                        });
+                    }
+                }).catch(err => {
+                    console.error("Failed to fetch tool data:", err);
+                    // Fallback to basic data
+                    setSelectedTool({
+                        id: fullData.toolId,
+                        toolName: "Loaded Tool",
+                        noOfTeeth: fullData.toolTeeth,
+                        circumferenceMM: fullData.toolCircumferenceMM,
+                        circumferenceInch: fullData.toolCircumferenceInch,
+                    });
                 });
             }
 
             if (fullData.rollId) {
-                setSelectedRoll({
-                    id: fullData.rollId,
-                    rollWidthMM: fullData.rollWidthMM,
-                    rollTotalGSM: fullData.rollTotalGSM,
+                // Fetch complete roll data from API
+                getRollById(String(fullData.rollId)).then(rollData => {
+                    if (rollData) {
+                        console.log("[Edit Mode] Fetched roll data:", rollData);
+                        setSelectedRoll({
+                            ...rollData,
+                            rollWidthMM: fullData.rollWidthMM || rollData.rollWidthMM,
+                            faceGSM: fullData.rollTotalGSM || rollData.faceGSM,
+                            totalGSM: fullData.rollTotalGSM || rollData.totalGSM,
+                        });
+                    }
+                }).catch(err => {
+                    console.error("Failed to fetch roll data:", err);
+                    // Fallback to basic data
+                    setSelectedRoll({
+                        id: fullData.rollId,
+                        itemName: "Loaded Roll",
+                        rollWidthMM: fullData.rollWidthMM,
+                        faceGSM: fullData.rollTotalGSM,
+                        totalGSM: fullData.rollTotalGSM,
+                    });
                 });
+            }
+
+            // Set selected processes from processCosts
+            if (fullData.processCosts && fullData.processCosts.length > 0) {
+                const processes = fullData.processCosts.map((pc: any) => ({
+                    id: pc.processId,
+                    name: pc.processName || mockProcesses.find((p: any) => p.id === pc.processId)?.processName || 'Process'
+                }));
+                setSelectedProcesses(processes);
             }
 
             if (fullData.dieId) {
@@ -560,7 +608,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
 
     // Central Recalculation Handler
     // Call this whenever a dependency changes (Qty, Ups, Size, Roll, Processes, Wastage)
-    const recalculateAll = useCallback((fieldChanged?: string, value?: any) => {
+    const recalculateAll = useCallback((fieldChanged?: string, value?: any, overrideRoll?: any, overrideTool?: any) => {
         const values = form.getValues();
         const toolCircumference = values.toolCircumferenceMM ? parseFloat(values.toolCircumferenceMM as any) : 0;
 
@@ -622,21 +670,23 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                 totalRM: results.totalRunningMtr,
                 totalSqMtr: results.totalSqMtr,
                 orderQty: inputs.orderQty,
-                colors: (values.colorsFront || 0) + (values.colorsBack || 0),
+                colors: Number(values.colorsFront || 0) + Number(values.colorsBack || 0),
+                colorsBack: Number(values.colorsBack || 0),
                 sizeW: values.jobWidthMM || 0,
                 sizeL: values.jobHeightMM || 0
             };
 
             const updatedProcesses = currentProcesses.map(proc => {
-                const { quantity, rate, amount, isManualQuantity, isManualRate } = EstimationCalculator.calculateProcessCost(proc, totalsForProcess);
-                return { ...proc, quantity, rate, amount, isManualQuantity: isManualQuantity || false, isManualRate: isManualRate || false };
+                const { quantity, rate, amount, isManualQuantity, isManualRate, debugInfo } = EstimationCalculator.calculateProcessCost(proc, totalsForProcess);
+                return { ...proc, quantity, rate, amount, isManualQuantity: isManualQuantity || false, isManualRate: isManualRate || false, debugInfo };
             });
 
             form.setValue("processCosts", updatedProcesses);
 
             // 5. Update Financials
             const materialRate = values.materialRate || 0;
-            const rollUnit = selectedRoll?.purchaseUnit || "KG";
+            const currentRoll = overrideRoll || selectedRoll;
+            const rollUnit = currentRoll?.purchaseUnit || "KG";
             let matQty = results.totalKg;
             let matUnitLabel = "Kg";
 
@@ -686,7 +736,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                 console.error("Calculation error:", error);
             }
         }
-    }, [form]);
+    }, [form, selectedRoll, selectedTool]);
 
     // Explicit Trigger Handlers (Attached to Inputs via onChange/onBlur)
     const handleCalcTrigger = (field: string, val: any) => {
@@ -713,8 +763,9 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
             // Filter fields that trigger recalc
             const triggers = [
                 "orderQty", "upsAcross", "upsAround", "jobHeightMM", "jobWidthMM",
-                "rollWidthMM", "rollTotalGSM", "wastagePercent", "wastageRM",
-                "materialRate", "additionalCostAmount", "gstPercent", "processCosts"
+                "rollWidthMM", "rollTotalGSM",
+                "materialRate", "gstPercent",
+                "colorsFront", "colorsBack"
             ];
 
             if (name && triggers.includes(name)) {
@@ -791,50 +842,140 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
 
             console.log("Step 3: Saving to storage...");
 
-            // Clean data to avoid serialization issues
-            const cleanData = JSON.parse(JSON.stringify({
-                ...finalData,
-                // Ensure dates are strings
-                date: finalData.date ? new Date(finalData.date).toISOString() : new Date().toISOString(),
-                deliveryDate: finalData.deliveryDate ? new Date(finalData.deliveryDate).toISOString() : undefined,
-                id: initialData?.id
-            }));
+            console.log("Step 3: Saving to backend...");
 
-            console.log("Final Data to Save:", cleanData);
+            // Construct DTO
+            const payload: any = {
+                jobCardNo: (data.jobCardNo === "Auto Generated" || !data.jobCardNo) ? "" : data.jobCardNo, // Force empty for backend generation
+                date: data.date ? format(data.date, "yyyy-MM-dd") : new Date().toISOString(),
+                clientId: Number(data.clientId),
+                jobName: data.jobName,
+                jobPriority: data.jobPriority,
+                jobType: data.jobType,
+                status: "Draft",
+                orderQty: Number(data.orderQty),
+                categoryId: Number(data.category), // Assuming Category Value is ID
+                poNumber: data.poNumber,
+                deliveryDate: data.deliveryDate ? format(data.deliveryDate, "yyyy-MM-dd") : undefined,
+                salesPersonName: data.salesPerson,
 
-            // Save to Local Storage
-            const savedItem = storage.saveEstimation(cleanData);
+                totalJobCost: data.totalJobCost,
+                finalPriceWithGST: data.finalPriceWithGST,
+                unitCost: data.unitCost,
+                finalSalesPrice: data.finalSalesPrice,
+                totalOrderValue: data.totalOrderValue,
 
-            console.log("✓ Saved successfully!");
-            console.log("Saved Item:", savedItem);
+                content: []
+            };
 
-            console.log("Step 4: Showing success toast...");
-            toast.success("Estimation Saved Successfully", {
-                description: `Job "${savedItem.jobName}" (${savedItem.jobCardNo}) saved.`
+            // Map Contents
+            // If contents array is populated, use it.
+            // If empty, use current form state as single content item.
+            const contentSource = (data.contents && data.contents.length > 0) ? data.contents : [data];
+
+            payload.content = contentSource.map((item: any) => {
+                const mapped = {
+                    contentName: item.contentName || "Main Content",
+                    machineName: item.machineName,
+                    jobWidthMM: item.jobWidthMM,
+                    jobHeightMM: item.jobHeightMM,
+                    colorsFront: item.colorsFront,
+                    colorsBack: item.colorsBack,
+                    upsAcross: item.upsAcross,
+                    upsAround: item.upsAround,
+                    totalUps: item.totalUps,
+                    toolId: item.toolId ? Number(item.toolId) : null,
+                    toolTeeth: item.toolTeeth ? Number(item.toolTeeth) : null,
+                    toolCircumferenceMM: item.toolCircumferenceMM ? Number(item.toolCircumferenceMM) : null,
+                    toolCircumferenceInch: item.toolCircumferenceInch ? Number(item.toolCircumferenceInch) : null,
+
+                    dieId: item.dieId ? Number(item.dieId) : null,
+
+                    rollId: item.rollId ? Number(item.rollId) : null,
+                    rollWidthMM: item.rollWidthMM ? Number(item.rollWidthMM) : null,
+                    rollTotalGSM: item.rollTotalGSM ? Number(item.rollTotalGSM) : null,
+                    // RollMaster 'Id' is INT. 'RollNo' is String. 'rollId' in form is likely RollNo if not handled.
+                    // Actually RollMasters Table has Id (int).
+                    // Frontend RollSelection returns object. form.rollId likely set to ID. check handleRollSelect.
+
+                    baseRunningMtr: item.baseRunningMtr,
+                    baseSqMtr: item.baseSqMtr,
+                    baseKg: item.baseKg,
+                    wastagePercent: item.wastagePercent,
+                    wastageRM: item.wastageRM,
+                    totalRunningMtr: item.totalRunningMtr,
+                    totalSqMtr: item.totalSqMtr,
+                    totalKg: item.totalKg,
+                    materialRate: item.materialRate,
+                    materialCostAmount: item.materialCostAmount,
+                    additionalCostPercent: item.additionalCostPercent,
+                    additionalCostAmount: item.additionalCostAmount,
+
+                    processCosts: item.processCosts?.map((pc: any) => ({
+                        processId: Number(pc.processId),
+                        rateType: pc.rateType,
+                        quantity: pc.quantity,
+                        rate: pc.rate,
+                        amount: pc.amount,
+                        isManualQuantity: pc.isManualQuantity,
+                        isManualRate: pc.isManualRate,
+                        baseRate: pc.baseRate,
+                        extraColorRate: pc.extraColorRate,
+                        backPrintingRate: pc.backPrintingRate,
+                        debugInfo: pc.debugInfo
+                    })) || []
+                };
+
+                console.log("Frontend Payload Item:", {
+                    contentName: mapped.contentName,
+                    toolId: mapped.toolId,
+                    toolTeeth: mapped.toolTeeth,
+                    rollId: mapped.rollId,
+                    rollWidthMM: mapped.rollWidthMM,
+                    rollTotalGSM: mapped.rollTotalGSM,
+                    dieId: mapped.dieId
+                });
+
+                return mapped;
             });
 
-            console.log("Step 5: Navigating...");
-            // Redirect to list or go back
+            // Handle RollId specific check (Frontend uses string ID sometimes?)
+            // If rollId is NaN, it might be textual. But DB expects INT.
+            // For now assuming handleRollSelect sets ID.
+
+            console.log("Payload:", JSON.stringify(payload, null, 2));
+            console.log("Payload Content Array Length:", payload.content?.length || 0);
+            console.log("Payload Content Array:", payload.content);
+
+            if (initialData?.id) {
+                await updateEstimation(Number(initialData.id), payload);
+                toast.success("Estimation Updated Successfully!");
+            } else {
+                await createEstimation(payload);
+                toast.success("Estimation Created Successfully!");
+            }
+
+            console.log("Step 4: Navigating...");
             if (onBack) {
-                console.log("Calling onBack()");
                 onBack();
             } else {
-                console.log("Redirecting to /estimation");
-                router.push("/estimation");
+                // Force refresh or redirect
+                // router.push("/production/estimation"); 
+                // Actually, if we are in a dialog/page, we might want to just refresh list
+                window.location.href = "/production/estimation";
             }
 
             console.log("=== ESTIMATION SAVE COMPLETED SUCCESSFULLY ===");
         } catch (error: any) {
             console.error("=== SAVE ERROR ===");
             console.error("Error object:", error);
-            console.error("Error message:", error?.message);
-            console.error("Error stack:", error?.stack);
 
+            // Show detailed error if available
+            const msg = error?.response?.data?.message || error?.message || "Unknown error";
             toast.error("Failed to save estimation", {
-                description: error?.message || "Unknown error occurred. Check console for details."
+                description: msg
             });
         } finally {
-            console.log("Step 6: Resetting saving state...");
             setIsSaving(false);
         }
     }
@@ -861,9 +1002,13 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
     const handleToolSelect = useCallback((tool: any) => {
         setSelectedTool(tool);
         setValue("toolId", tool.id);
-        setValue("toolTeeth", tool.noOfTeeth);
-        setValue("toolCircumferenceMM", tool.circumferenceMM);
-        setValue("toolCircumferenceInch", parseFloat((tool.circumferenceMM / 25.4).toFixed(4)));
+        // Robust property access (handling API casing variations)
+        const teeth = tool.noOfTeeth || tool.NoOfTeeth || tool.teeth || tool.Teeth || 0;
+        const circMM = tool.circumferenceMM || tool.CircumferenceMM || 0;
+
+        setValue("toolTeeth", teeth);
+        setValue("toolCircumferenceMM", circMM);
+        setValue("toolCircumferenceInch", parseFloat((circMM / 25.4).toFixed(4)));
         setToolDialogOpen(false);
         // Trigger recalc logic since tool changed
         setTimeout(() => recalculateAll("toolId"), 50);
@@ -876,23 +1021,28 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
     }, [setValue]);
 
     const handleRollSelect = useCallback((roll: any) => {
+        // Robust property access
+        const width = roll.rollWidthMM || roll.RollWidthMM || roll.width || 0;
+        const gsm = roll.totalGSM || roll.TotalGSM || roll.faceGSM || roll.FaceGSM || 0;
+        const rate = roll.purchaseRate || roll.PurchaseRate || 0;
+
         // Validate roll data for suspicious values
-        if (roll.rollWidthMM < 100) {
+        if (width < 100) {
             toast.warning("Suspiciously Small Roll Width!", {
-                description: `Roll width is ${roll.rollWidthMM}mm. Did you mean ${roll.rollWidthMM * 100}mm? This will result in very low material calculations.`
+                description: `Roll width is ${width}mm. Did you mean ${width * 100}mm? This will result in very low material calculations.`
             });
         }
-        if (roll.totalGSM < 20) {
+        if (gsm < 20) {
             toast.warning("Suspiciously Small Roll GSM!", {
-                description: `Roll GSM is ${roll.totalGSM}gsm. This is very low and will result in minimal material weight. Please verify your Roll Master data.`
+                description: `Roll GSM is ${gsm}gsm. This is very low and will result in minimal material weight. Please verify your Roll Master data.`
             });
         }
 
         setSelectedRoll(roll);
         setValue("rollId", roll.id);
-        setValue("rollWidthMM", roll.rollWidthMM);
-        setValue("rollTotalGSM", roll.totalGSM);
-        setValue("materialRate", roll.purchaseRate || 0);
+        setValue("rollWidthMM", width);
+        setValue("rollTotalGSM", gsm);
+        setValue("materialRate", rate);
         setRollDialogOpen(false);
         // Trigger recalc logic since roll changed
         setTimeout(() => recalculateAll("rollId"), 50);
@@ -900,16 +1050,30 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
 
     const handleProcessSelect = useCallback((selectedIds: string[]) => {
         // Find newly added processes to update form array
-        const processes = mockProcesses.filter(p => selectedIds.includes(p.id));
+        const processes = mockProcesses.filter(p => selectedIds.some(id => String(id) === String(p.id)));
         setSelectedProcesses(processes);
         setValue("processIds", selectedIds);
 
         // Update Cost Array Logic (Manual Sync now needed since effect is gone)
         const currentCosts = getValues("processCosts") || [];
         const newCostArray = processes.map(proc => {
-            const existing = currentCosts.find(c => c.processId === proc.id);
+            const existing = currentCosts.find(c => String(c.processId) === String(proc.id));
             const typeEntry = MOCK_CHARGE_TYPES.find(t => t.value === proc.chargeType);
             const mappedRateType = typeEntry ? typeEntry.label : "Per KG" as any;
+
+            // Parse advanced config if available
+            let extraRate = 0;
+            let backRate = 0;
+            if (proc.formulaParams) {
+                try {
+                    const params = JSON.parse(proc.formulaParams);
+                    extraRate = Number(params.extraColorRate || 0);
+                    // Check both keys for robustness
+                    backRate = Number(params.backPrintingRate || params.backPrintRate || 0);
+                } catch (e) {
+                    console.error("Failed to parse process params", e);
+                }
+            }
 
             return {
                 processId: proc.id,
@@ -919,7 +1083,10 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                 rate: existing?.rate || proc.rate || 0,
                 amount: existing?.amount || 0,
                 isManualQuantity: existing?.isManualQuantity || false,
-                isManualRate: existing?.isManualRate || false
+                isManualRate: existing?.isManualRate || false,
+                baseRate: existing?.baseRate || proc.rate || 0, // Store Base Rate
+                extraColorRate: existing?.extraColorRate || extraRate,
+                backPrintingRate: existing?.backPrintingRate || backRate
             };
         });
 
@@ -1031,7 +1198,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                         <FormField name="clientId" control={form.control} render={({ field }) => (
                                             <FormItem className="md:col-span-2 space-y-1 md:space-y-0.5">
                                                 <FormLabel className={labelClass}>Client Name</FormLabel>
-                                                <Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger className={inputClass}><SelectValue placeholder="Select" /></SelectTrigger></FormControl><SelectContent>{clients.map(c => <SelectItem key={c.id} value={c.id}>{c.clientName}</SelectItem>)}</SelectContent></Select>
+                                                <Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger className={inputClass}><SelectValue placeholder="Select" /></SelectTrigger></FormControl><SelectContent>{clients.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.clientName}</SelectItem>)}</SelectContent></Select>
                                             </FormItem>
                                         )} />
                                         <FormField name="jobName" control={form.control} render={({ field }) => (
@@ -1058,13 +1225,14 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                                 <FormLabel className={labelClass}>Category</FormLabel>
                                                 <Select onValueChange={(val) => {
                                                     field.onChange(val);
-                                                    const cat = categories.find(c => c.id === val);
+                                                    const cat = categories.find(c => String(c.id) === String(val));
                                                     if (cat && cat.processIds?.length) {
-                                                        handleProcessSelect(cat.processIds);
+                                                        const procIds = cat.processIds.map(String);
+                                                        handleProcessSelect(procIds);
                                                     }
                                                 }} value={field.value}>
                                                     <FormControl><SelectTrigger className={`${inputClass} px-2`}><SelectValue placeholder="-" /></SelectTrigger></FormControl>
-                                                    <SelectContent>{categories.map(c => <SelectItem key={c.id} value={c.id}>{c.name || c.categoryName}</SelectItem>)}</SelectContent>
+                                                    <SelectContent>{categories.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name || c.categoryName}</SelectItem>)}</SelectContent>
                                                 </Select>
                                             </FormItem>
                                         )} />
@@ -1274,7 +1442,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                                         title={selectedProcesses.map(p => p.name).join(", ")}
                                                         onClick={() => { setProcessDialogKey(prev => prev + 1); setProcessDialogOpen(true); }}
                                                     >
-                                                        {selectedProcesses.length > 0 ? selectedProcesses.map(p => p.name).join(", ") : "Printing, Laminating, Slitting, Pouching"}
+                                                        {selectedProcesses.length > 0 ? selectedProcesses.map(p => p.name).join(", ") : "Select Processes"}
                                                     </div>
                                                 </div>
                                                 <div className="col-span-1 md:col-span-1 flex items-end">
@@ -1330,13 +1498,20 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                                                         {content.contentName}
                                                                         {editingContentId === content.id && <span className="ml-2 text-[10px] text-amber-600 font-normal border border-amber-200 rounded px-1 bg-white">Editing</span>}
                                                                     </td>
-                                                                    <td className="p-2 px-3 text-gray-600 text-[10px] uppercase max-w-[180px] truncate" title={content.rollDescription}>
-                                                                        {content.rollDescription || "-"}
+                                                                    <td className="p-2 px-3 text-gray-600 text-[10px] uppercase max-w-[180px] truncate" title={content.rollDescription || `${content.rollWidthMM || ''}mm | ${content.rollTotalGSM || ''}gsm`}>
+                                                                        {content.rollDescription || (content.rollWidthMM && content.rollTotalGSM ? `${content.rollWidthMM}mm | ${content.rollTotalGSM}gsm` : "-")}
                                                                     </td>
                                                                     <td className="p-2 px-3 text-gray-600 text-[10px]">{content.jobWidthMM} x {content.jobHeightMM}</td>
                                                                     <td className="p-2 px-3 text-gray-600 text-[10px]">{content.colorsFront}F / {content.colorsBack}B</td>
                                                                     <td className="p-2 px-3 text-gray-600 text-[10px]">{content.totalUps}</td>
-                                                                    <td className="p-2 px-3 text-right font-bold text-blue-600">₹{(content.totalJobCost || 0).toFixed(2)}</td>
+                                                                    <td className="p-2 px-3 text-right font-bold text-blue-600">₹{(() => {
+                                                                        // Calculate job cost if not present
+                                                                        if (content.totalJobCost) return content.totalJobCost.toFixed(2);
+                                                                        const materialCost = content.materialCostAmount || 0;
+                                                                        const processCost = (content.processCosts || []).reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
+                                                                        const additionalCost = content.additionalCostAmount || 0;
+                                                                        return (materialCost + processCost + additionalCost).toFixed(2);
+                                                                    })()}</td>
                                                                     <td className="p-2 px-3 text-center flex items-center justify-center gap-1">
                                                                         <Button
                                                                             type="button"
@@ -1371,7 +1546,14 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                                         <tfoot className="bg-gray-50 font-bold text-gray-900 sticky bottom-0 z-10 shadow-inner">
                                                             <tr>
                                                                 <td colSpan={5} className="p-2 px-3 text-right text-gray-500 uppercase text-[10px]">Grand Total Job Cost</td>
-                                                                <td className="p-2 text-right text-base text-blue-700">₹{(form.watch("contents") || []).reduce((sum, c) => sum + (c.totalJobCost || 0), 0).toFixed(2)}</td>
+                                                                <td className="p-2 text-right text-base text-blue-700">₹{(form.watch("contents") || []).reduce((sum, c) => {
+                                                                    // Calculate job cost same way as individual items
+                                                                    if (c.totalJobCost) return sum + c.totalJobCost;
+                                                                    const materialCost = c.materialCostAmount || 0;
+                                                                    const processCost = (c.processCosts || []).reduce((s: number, p: any) => s + (p.amount || 0), 0);
+                                                                    const additionalCost = c.additionalCostAmount || 0;
+                                                                    return sum + materialCost + processCost + additionalCost;
+                                                                }, 0).toFixed(2)}</td>
                                                                 <td></td>
                                                             </tr>
                                                         </tfoot>
@@ -1495,7 +1677,7 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                                         </div>
                                                     )}
                                                     {processFields.map((proc, idx) => {
-                                                        const handleQuantityChange = () => {
+                                                        const handleQuantityBlur = () => {
                                                             // Mark as manually edited
                                                             form.setValue(`processCosts.${idx}.isManualQuantity`, true);
 
@@ -1505,11 +1687,11 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                                             const amt = parseFloat((qty * rate).toFixed(2));
                                                             form.setValue(`processCosts.${idx}.amount`, amt);
 
-                                                            // Trigger full recalculation
-                                                            setTimeout(() => recalculateAll("processCosts"), 50);
+                                                            // Trigger full recalculation when user finishes editing
+                                                            recalculateAll("processCosts");
                                                         };
 
-                                                        const handleRateChange = () => {
+                                                        const handleRateBlur = () => {
                                                             // Mark as manually edited
                                                             form.setValue(`processCosts.${idx}.isManualRate`, true);
 
@@ -1519,8 +1701,8 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
                                                             const amt = parseFloat((qty * rate).toFixed(2));
                                                             form.setValue(`processCosts.${idx}.amount`, amt);
 
-                                                            // Trigger full recalculation
-                                                            setTimeout(() => recalculateAll("processCosts"), 50);
+                                                            // Trigger full recalculation when user finishes editing
+                                                            recalculateAll("processCosts");
                                                         };
 
                                                         // Check if this process has manual edits
@@ -1529,43 +1711,42 @@ export const EstimationForm = ({ onBack, initialData }: EstimationFormProps) => 
 
                                                         return (
                                                             <div key={proc.id} className="grid grid-cols-12 gap-1 px-3 py-1 border-b border-gray-50 items-center hover:bg-gray-50 group">
-                                                                <div className="col-span-3 text-[10px] font-medium text-gray-700 truncate">{proc.processName}</div>
+                                                                <div className="col-span-3">
+                                                                    <div className="text-[10px] font-medium text-gray-700 truncate">{proc.processName}</div>
+                                                                    {proc.debugInfo && (
+                                                                        <div className="text-[9px] text-blue-600 bg-blue-50 px-1 py-0.5 rounded border border-blue-100 mt-0.5 inline-block max-w-full truncate" title={proc.debugInfo}>
+                                                                            {proc.debugInfo}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
                                                                 <div className="col-span-4">
                                                                     <div className="flex items-center gap-1">
-                                                                        <div className="text-[9px] text-gray-400 w-12 truncate" title={proc.rateType}>{proc.rateType?.replace("Per ", "").replace("Rate/", "")}</div>
-                                                                        <div className="relative flex-1">
-                                                                            <Input
-                                                                                type="number"
-                                                                                className={`h-7 w-20 text-right text-[10px] bg-white px-2 ${isManualQty ? 'border-orange-400 ring-1 ring-orange-200' : 'border-blue-200'} focus:border-blue-400 focus:ring-1 focus:ring-blue-400`}
-                                                                                step="any"
-                                                                                placeholder="0.00"
-                                                                                {...form.register(`processCosts.${idx}.quantity`, {
-                                                                                    valueAsNumber: true,
-                                                                                    onChange: handleQuantityChange
-                                                                                })}
-                                                                            />
-                                                                            {isManualQty && (
-                                                                                <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-orange-500 ring-1 ring-white" title="Manually edited" />
-                                                                            )}
+                                                                        <div className="text-[9px] text-gray-500 min-w-fit font-medium bg-gray-50 px-1 py-0.5 rounded border border-gray-100" title={proc.rateType}>
+                                                                            {proc.rateType?.replace("Per ", "").replace("Rate/", "").replace("Printing (Advanced)", "Print(Adv)")}
                                                                         </div>
+                                                                        <Input
+                                                                            type="number"
+                                                                            className={`h-7 w-20 text-right text-[10px] bg-white px-2 ${isManualQty ? 'border-orange-400 ring-1 ring-orange-200' : 'border-blue-200'} focus:border-blue-400 focus:ring-1 focus:ring-blue-400`}
+                                                                            step="any"
+                                                                            placeholder="0.00"
+                                                                            {...form.register(`processCosts.${idx}.quantity`, {
+                                                                                valueAsNumber: true,
+                                                                                onBlur: handleQuantityBlur
+                                                                            })}
+                                                                        />
                                                                     </div>
                                                                 </div>
                                                                 <div className="col-span-3 text-right flex justify-end">
-                                                                    <div className="relative">
-                                                                        <Input
-                                                                            type="number"
-                                                                            className={`h-7 w-20 text-right text-[10px] bg-white px-2 ${isManualRt ? 'border-orange-400 ring-1 ring-orange-200' : 'border-green-200'} focus:border-green-400 focus:ring-1 focus:ring-green-400`}
-                                                                            step="any"
-                                                                            placeholder="0.00"
-                                                                            {...form.register(`processCosts.${idx}.rate`, {
-                                                                                valueAsNumber: true,
-                                                                                onChange: handleRateChange
-                                                                            })}
-                                                                        />
-                                                                        {isManualRt && (
-                                                                            <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-orange-500 ring-1 ring-white" title="Manually edited" />
-                                                                        )}
-                                                                    </div>
+                                                                    <Input
+                                                                        type="number"
+                                                                        className={`h-7 w-20 text-right text-[10px] bg-white px-2 ${isManualRt ? 'border-orange-400 ring-1 ring-orange-200' : 'border-green-200'} focus:border-green-400 focus:ring-1 focus:ring-green-400`}
+                                                                        step="any"
+                                                                        placeholder="0.00"
+                                                                        {...form.register(`processCosts.${idx}.rate`, {
+                                                                            valueAsNumber: true,
+                                                                            onBlur: handleRateBlur
+                                                                        })}
+                                                                    />
                                                                 </div>
                                                                 <div className="col-span-2 text-right font-bold text-gray-700 text-[10px]">
                                                                     ₹{form.watch(`processCosts.${idx}.amount`)?.toFixed(2) || '0.00'}

@@ -1,31 +1,36 @@
 import { CategoryMaster } from "@/types/category-master";
-import { CategoryMasterSchemaType } from "@/lib/validations/category-master";
-import { categoryStorage } from "../storage/category-storage";
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const API_BASE_URL = "http://localhost:5005/api/Categories";
 
-export async function getCategories(): Promise<CategoryMaster[]> {
-    await delay(300);
-    return categoryStorage.getAll();
-}
+export const getCategories = async (): Promise<CategoryMaster[]> => {
+    const res = await fetch(API_BASE_URL);
+    if (!res.ok) throw new Error("Failed to fetch categories");
+    return await res.json();
+};
 
-export async function createCategory(data: CategoryMasterSchemaType): Promise<CategoryMaster> {
-    await delay(400);
-    const newCategory = categoryStorage.save(data);
-    return newCategory;
-}
+export const createCategory = async (category: any): Promise<CategoryMaster> => {
+    const res = await fetch(API_BASE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(category),
+    });
+    if (!res.ok) throw new Error("Failed to create category");
+    return await res.json();
+};
 
-export async function updateCategory(id: string, data: CategoryMasterSchemaType): Promise<CategoryMaster> {
-    await delay(400);
-    const existing = categoryStorage.getById(id);
-    if (!existing) throw new Error("Category not found");
+export const updateCategory = async (id: string, category: any): Promise<CategoryMaster> => {
+    const res = await fetch(`${API_BASE_URL}/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(category),
+    });
+    if (!res.ok) throw new Error("Failed to update category");
+    return await res.json();
+};
 
-    const updated = categoryStorage.save({ ...existing, ...data, id });
-    return updated;
-}
-
-export async function deleteCategory(id: string): Promise<void> {
-    await delay(300);
-    const existing = categoryStorage.getById(id);
-    if (existing) categoryStorage.delete(id);
-}
+export const deleteCategory = async (id: string): Promise<void> => {
+    const res = await fetch(`${API_BASE_URL}/${id}`, {
+        method: "DELETE",
+    });
+    if (!res.ok) throw new Error("Failed to delete category");
+};

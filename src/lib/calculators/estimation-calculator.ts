@@ -125,9 +125,9 @@ export const EstimationCalculator = {
      */
     calculateProcessCost: (
         proc: any, // Process object from schema
-        totals: { totalKg: number; totalRM: number; totalSqMtr: number; orderQty: number; colors: number; sizeW: number; sizeL: number }
-    ): { quantity: number; rate: number; amount: number; isManualQuantity?: boolean; isManualRate?: boolean } => {
-        const { totalKg, totalRM, totalSqMtr, orderQty, colors, sizeW, sizeL } = totals;
+        totals: { totalKg: number; totalRM: number; totalSqMtr: number; orderQty: number; colors: number; colorsBack?: number; sizeW: number; sizeL: number }
+    ): { quantity: number; rate: number; amount: number; isManualQuantity?: boolean; isManualRate?: boolean; debugInfo?: string } => {
+        const { totalKg, totalRM, totalSqMtr, orderQty, colors, colorsBack, sizeW, sizeL } = totals;
         const sizeW_Inch = sizeW / 25.4;
         const sizeL_Inch = sizeL / 25.4;
 
@@ -139,6 +139,7 @@ export const EstimationCalculator = {
             switch (proc.rateType) {
                 case "Per KG":
                 case "Rate/Kg":
+                case "Printing (Advanced)":
                     calculatedQty = totalKg;
                     break;
                 case "Per RM":
@@ -177,6 +178,13 @@ export const EstimationCalculator = {
                     calculatedQty = sizeL_Inch * orderQty;
                     break;
                 case "Rate/Sq.CM":
+                    calculatedQty = (sizeW * sizeL * orderQty) / 100; // SqCM
+                    break;
+                default:
+                    // Fallback to KG if unknown, or maybe 0? 
+                    // Safe default for Flexible Packaging is KG.
+                    calculatedQty = totalKg;
+                    break;
                     calculatedQty = (sizeW / 10) * (sizeL / 10) * orderQty;
                     break;
             }
@@ -186,8 +194,47 @@ export const EstimationCalculator = {
             }
         }
 
-        // If user manually edited rate, use their value. Otherwise use process master rate.
-        const finalRate = proc.isManualRate ? (proc.rate || 0) : (proc.rate || 0);
+        // If user manually edited rate, use their value. Otherwise use process master rate (or calculated rate).
+        let finalRate = proc.rate || 0;
+
+        // Specialized Logic for Advanced Printing
+        // Only override if NOT manual rate (or maybe we consider this the "Base Rate" and always recalculate?)
+        // Standard behavior: if isManualRate is true, respect user override.
+        let debugInfo = "";
+
+        if (!proc.isManualRate && proc.rateType === "Printing (Advanced)") {
+            const baseRate = proc.baseRate || proc.rate || 0;
+            const extraRate = proc.extraColorRate || 0;
+            const backRate = proc.backPrintingRate || 0;
+
+            let calculatedRate = baseRate;
+            let extraCharge = 0;
+            let backCharge = 0;
+
+            // Calculate Front Colors Only
+            // 'colors' in totals is (Front + Back). So Front = Total - Back.
+            const totalColors = colors;
+            const actualBackColors = colorsBack || 0;
+            const frontColors = Math.max(0, totalColors - actualBackColors);
+
+            // Add Extra Color Charge (For Front Colors beyond 1)
+            const extraFrontColors = Math.max(0, frontColors - 1);
+            if (extraFrontColors > 0) {
+                extraCharge = extraFrontColors * extraRate;
+                calculatedRate += extraCharge;
+            }
+
+            // Add Back Printing Charge (For ALL Back Colors)
+            if (actualBackColors > 0) {
+                backCharge = actualBackColors * backRate;
+                calculatedRate += backCharge;
+            }
+
+            finalRate = calculatedRate;
+            debugInfo = `Base: ${baseRate} + Extra(${extraFrontColors}x${extraRate}): ${extraCharge} + Back(${actualBackColors}x${backRate}): ${backCharge}`;
+        } else if (proc.isManualRate) {
+            finalRate = proc.rate || 0;
+        }
 
         // Calculate amount: quantity × rate (NO setup charges as per user request)
         let rateMultiplier = finalRate;
@@ -201,7 +248,8 @@ export const EstimationCalculator = {
             rate: finalRate,
             amount,
             isManualQuantity: proc.isManualQuantity || false,
-            isManualRate: proc.isManualRate || false
+            isManualRate: proc.isManualRate || false,
+            debugInfo
         };
     },
 

@@ -20,6 +20,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { ProcessMaster, MOCK_CHARGE_TYPES, ChargeType } from "@/types/process-master";
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
@@ -36,12 +37,17 @@ export function ProcessMasterForm({ initialData, onSuccess, onCancel }: ProcessM
     const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
     const [isLoadingCharges, setIsLoadingCharges] = useState(false);
 
+    // Advanced Config State
+    const [extraColorRate, setExtraColorRate] = useState("0");
+    const [backPrintRate, setBackPrintRate] = useState("0");
+
     const defaultValues: ProcessMasterFormValues = {
         id: initialData?.id,
         name: initialData?.name || "",
         chargeType: initialData?.chargeType || "",
         isUnitConversion: initialData?.isUnitConversion ?? false,
         rate: initialData?.rate || 0,
+        formulaParams: initialData?.formulaParams || "",
     };
 
     const form = useForm<ProcessMasterFormValues>({
@@ -49,6 +55,42 @@ export function ProcessMasterForm({ initialData, onSuccess, onCancel }: ProcessM
         resolver: zodResolver(processMasterSchema) as any,
         defaultValues,
     });
+
+    const watchChargeType = form.watch("chargeType");
+
+    // Hydrate Advanced State & Reset Form
+    useEffect(() => {
+        if (initialData) {
+            form.reset({
+                id: initialData.id ? String(initialData.id) : undefined,
+                name: initialData.name,
+                chargeType: initialData.chargeType,
+                isUnitConversion: initialData.isUnitConversion,
+                rate: initialData.rate,
+                formulaParams: initialData.formulaParams
+            });
+            // Hydrate formula params
+            if (initialData.formulaParams) {
+                try {
+                    const params = JSON.parse(initialData.formulaParams);
+                    if (params.extraColorRate) setExtraColorRate(params.extraColorRate.toString());
+                    if (params.backPrintRate) setBackPrintRate(params.backPrintRate.toString());
+                } catch (e) {
+                    console.error("Failed to parse formula params", e);
+                }
+            }
+        } else {
+            form.reset({
+                name: "",
+                chargeType: "",
+                isUnitConversion: false,
+                rate: 0,
+                formulaParams: ""
+            });
+            setExtraColorRate("0");
+            setBackPrintRate("0");
+        }
+    }, [initialData, form]);
 
     // Simulate Database Fetch for Charge Types
     useEffect(() => {
@@ -66,16 +108,22 @@ export function ProcessMasterForm({ initialData, onSuccess, onCancel }: ProcessM
     const onSubmit = async (values: ProcessMasterFormValues) => {
         try {
             // Generate code if creating new process
-            let code = initialData?.code;
-            if (!code) {
-                // Auto-generate code (you can improve this logic)
-                const timestamp = Date.now().toString().slice(-5);
-                code = `PM${timestamp}`;
+            // Generate code if creating new process
+            const code = initialData?.code || ""; // Backend generates code for new items
+
+            // Construct Formula Params
+            let formulaParams: string | undefined = undefined;
+            if (values.chargeType === "printing_advanced") {
+                formulaParams = JSON.stringify({
+                    extraColorRate: Number(extraColorRate),
+                    backPrintingRate: Number(backPrintRate) // Standardized Key
+                });
             }
 
             const processData = {
                 ...values,
                 code,
+                formulaParams
             };
 
             if (initialData?.id) {
@@ -95,7 +143,10 @@ export function ProcessMasterForm({ initialData, onSuccess, onCancel }: ProcessM
 
     return (
         <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit, (errors) => {
+                console.error("Form Errors:", errors);
+                toast.error("Form Validation Error: " + Object.keys(errors).join(", "));
+            })} className="space-y-4">
                 <FormField
                     control={form.control}
                     name="name"
@@ -172,7 +223,9 @@ export function ProcessMasterForm({ initialData, onSuccess, onCancel }: ProcessM
                         name="rate"
                         render={({ field }) => (
                             <FormItem>
-                                <FormLabel className="text-xs font-bold text-gray-500">Rate</FormLabel>
+                                <FormLabel className="text-xs font-bold text-gray-500">
+                                    {watchChargeType === "printing_advanced" ? "Base Rate (Single Color)" : "Rate"}
+                                </FormLabel>
                                 <FormControl>
                                     <Input type="number" step="0.01" placeholder="0.00" {...field} className="h-8 text-sm border-slate-200" />
                                 </FormControl>
@@ -181,6 +234,37 @@ export function ProcessMasterForm({ initialData, onSuccess, onCancel }: ProcessM
                         )}
                     />
                 </div>
+
+                {/* Advanced Printing Fields */}
+                {watchChargeType === "printing_advanced" && (
+                    <div className="p-4 border border-blue-100 bg-blue-50/50 rounded-md space-y-4">
+                        <h4 className="text-sm font-semibold text-blue-800">Advanced Printing Config</h4>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label className="text-xs font-bold text-gray-500">Extra Color Rate</Label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    value={extraColorRate}
+                                    onChange={(e) => setExtraColorRate(e.target.value)}
+                                    className="h-8 text-sm border-blue-200"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label className="text-xs font-bold text-gray-500">Back Printing Rate</Label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    value={backPrintRate}
+                                    onChange={(e) => setBackPrintRate(e.target.value)}
+                                    className="h-8 text-sm border-blue-200"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 <div className="flex justify-end space-x-2 pt-4">
                     <Button variant="outline" onClick={onCancel} type="button">

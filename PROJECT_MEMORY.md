@@ -59,12 +59,13 @@
 | **Inventory (GRN)** | Good Receipt Note | Done | Stock In |
 | **Inventory (Issue)** | Material Issue to Production | Done | Stock Out (FIFO logic pending) |
 | **Inventory (Return)** | Material Return from Production | Done | QR-based, Partial returns, Stock reversal |
+| **Inventory (Slitting)** | Jumbo Roll Slitting | **✅ Completed (Jan 7, 2026)** | Width split, Auto Roll Master creation, Recursive slitting, QR codes |
 | **Inventory (Stock)** | Live Stock View | Done | Filtering & History |
 | **Production Entry** | Daily Logs & Tracking | Refined | "Identical" UI achieved |
 | **Production List** | Job Progress Overview | Refined | Standardized Layout |
 
 ## 5. Business Logic Summary
-- **Stock calculation rules**: GRN adds to stock; Issue deducts from stock. Batch persistence is key.
+- **Stock calculation rules**: GRN adds to stock; Issue deducts from stock; Slitting reduces input stock and creates output stock entries. Batch persistence is key.
 - **Estimation formulas** (Core Calculation Engine: `src/lib/calculators/estimation-calculator.ts`):
   - **Ups Calculation**: `Ups = (Roll Width MM / Job Width MM) * (Roll Circumference MM / Job Length MM)` (Floor value)
   - **Length Required**: `Length = (Order Qty / Ups) * Job Length MM` (in MM)
@@ -79,7 +80,18 @@
     - `Rate/Running Meter`: `Cost = (Length MM / 1000) * Rate`
     - `Flat Rate`: `Cost = Rate`
   - **Total Cost**: `Total = Material Cost + Sum(Process Costs)`
-  
+
+- **Slitting formulas** (Core Calculation Engine: `src/services/api/slitting-service.ts`):
+  - **Output RM Calculation**: `Output RM = (Output Width / Input Width) × Input RM` (Proportional to width ratio)
+  - **Output SqMtr Calculation**: `Output SqMtr = (Output RM × Output Width) / 1000`
+  - **Output Weight Calculation**: `Output Kg = (Output SqMtr × GSM) / 1000`
+  - **Wastage Calculation (from Kg)**: `Wastage SqMtr = (Kg × 1000) / GSM`, `Wastage RM = (SqMtr × 1000) / Width`
+  - **Wastage Calculation (from RM)**: `Wastage SqMtr = (RM × Width) / 1000`, `Wastage Kg = (SqMtr × GSM) / 1000`
+  - **Wastage Calculation (from SqMtr)**: `Wastage RM = (SqMtr × 1000) / Width`, `Wastage Kg = (SqMtr × GSM) / 1000`
+  - **Batch Number Format**: `{Parent Batch}-SL{Index}` (e.g., `GRN00008-P00018-1-01-SL01`)
+  - **Stock Consumption**: `Consumed Kg = Sum(Output Kg) + Wastage Kg`
+  - **Roll Master Auto-Creation**: Match on `Width + GSM (all 3 types) + Item Name + Material Type`
+
 - **🚨 CRITICAL PRODUCTION RISKS IDENTIFIED** (See `estimation_audit.md` & `complete_system_analysis.md`):
   - **Missing Master Data Gaps (HIGH RISK)**: Calculations proceed silently with zero values (e.g., `rollGSM = 0` → `Material Cost = 0`) without warnings, potentially causing financial loss.
   - **Frontend-Only Logic (HIGH RISK)**: All calculations occur client-side only, posing data integrity risk as values could be manipulated before submission.
@@ -106,6 +118,7 @@
   - `production-storage.ts`: Handles Production Logs.
   - `issue-storage.ts`: Handles Material Issues.
   - `return-storage.ts`: Handles Material Returns with stock reversal.
+  - `slitting-storage.ts`: Handles Jumbo Roll Slitting with stock operations (reduce input, create outputs).
   - `inventory-service.ts`: Stock calculations.
   
 - **Estimation-Specific Services**:
@@ -117,6 +130,7 @@
   - `src/services/api/roll-service.ts`: API-like wrapper for roll operations.
   - `src/services/api/process-service.ts`: API-like wrapper for process operations.
   - `src/services/api/category-service.ts`: API-like wrapper for category operations.
+  - `src/services/api/slitting-service.ts`: Slitting calculations (output specs, wastage, validation, Roll Master auto-creation, QR generation).
 
 ## 8. Known Constraints / Decisions
 - **No Real Backend**: App runs entirely in browser (LocalStorage). Data clears if cache cleared.
@@ -124,6 +138,15 @@
 - **Scope**: Single-user focus currently (No RBAC).
 
 ## 9. Change Log
+- **2026-01-07** – **✂️ JUMBO ROLL SLITTING MODULE (COMPLETE IMPLEMENTATION)** – Implemented comprehensive Jumbo Roll Slitting module for width-wise splitting of jumbo rolls into multiple smaller rolls. **Core Features**: (1) **Two-Step Roll Selection** - Step 1: Select Roll Master with live inventory count display ("5 rolls available"), Step 2: Select specific batch from available GRN/Stock items; (2) **Recursive Slitting Support** - Can select previously slit rolls as input, enabling multi-level slitting operations; (3) **Automatic Roll Master Creation** - When creating output rolls with new widths, system auto-creates corresponding Roll Master entries if matching width+GSM+type doesn't exist, or reuses existing entries if match found (Match logic: Width + GSM (all 3 types) + Item Name + Material Type); (4) **Auto-calculated Output Specifications** - Proportional RM/SqMtr/Kg calculations based on width ratio, wastage tracking (Kg/RM/SqMtr) with manual entry options and auto-conversion between units; (5) **Stock Integration** - Input roll stock automatically reduces from GRN or Stock, output rolls create new stock entries with unique batch IDs (format: `{parentBatch}-SL01, SL02...`), full stock reversal on deletion; (6) **QR Code System** - Auto-generates QR codes for all output rolls with embedded data (batch, slitting job ID, width, GSM, weight, timestamp), manual print option in list page with print dialog showing all output QR codes in grid layout; (7) **Financial Year-Based IDs** - Slitting job IDs follow format `SL00001/25-26` with April-March FY logic; (8) **Flattened Register View** - List page displays one row per output roll with grouped display (shows total outputs count, wastage only on first row, action buttons only on first row). **Files Created**: `src/types/jumbo-slitting.ts` (3 interfaces + Zod schemas), `src/services/storage/slitting-storage.ts` (CRUD + stock operations + reversal logic), `src/services/api/slitting-service.ts` (calculations + validations + Roll Master auto-creation + QR generation), `src/components/inventory/slitting-columns.tsx` (register columns with QR print button), `src/app/inventory/slitting/page.tsx` (list page with flattening logic), `src/components/inventory/slitting-dialog.tsx` (form with two-step selection + output table + wastage panel), `src/components/inventory/slitting-qr-print-dialog.tsx` (QR print layout). Added Scissors icon navigation link to sidebar under Inventory section. **Build Status**: ✅ Compiled successfully, all TypeScript checks passed.
+- **2026-01-05** – **🎨 SETTINGS PAGE STANDARDIZATION & GRADIENT ENHANCEMENT** – Completely rewrote Settings page (`src/app/settings/page.tsx`) to follow standard design system. Removed Framer Motion animations, replaced custom two-column layout with standard `Card + CardHeader (gradient) + CardContent` pattern. **Enhanced gradient functionality**: Added 12 professional gradient presets (Milan Sky, Ocean Deep, Purple Rain, Sunset Blaze, Forest Green, Rose Gold, Midnight Blue, Amber Glow, Teal Wave, Indigo Night, Crimson Fire, Lime Fresh). Implemented **Manual/Auto toggle mode** - Auto mode uses AI color generation from single color, Manual mode allows independent control of start and end gradient colors. Added gradient preview panel, color breakdown visualization, and theme tips section. Follows standard container/card layout matching all other pages. **Sidebar Integration**: Replaced `ThemeCustomizer` drawer component with direct link to `/settings` page in sidebar footer. Settings button now navigates to full settings page instead of opening drawer. **Dark Mode Support**: Added comprehensive dark mode styling with `dark:` classes throughout - dark backgrounds (slate-800/900), dark borders (slate-600/700), dark text (slate-200/300/400), dark hover states. Ensures perfect visibility in both light and dark themes. Files modified: `sidebar.tsx`, `settings/page.tsx`.
+- **2026-01-05** – **✏️ PROCESS COST EDITING STABILITY FIX (onBlur Pattern)** – Fixed unstable editing experience in process cost fields. Changed from `onChange` to `onBlur` event handlers for FORMULA and RATE fields. Renamed handlers: `handleQuantityChange` → `handleQuantityBlur`, `handleRateChange` → `handleRateBlur`. Removed `setTimeout` delay. Recalculation now only fires when user finishes editing (tabs/clicks out) instead of on every keystroke, providing stable typing experience without cursor jumping or value flickering. Removed orange dot visual indicators per user request, kept orange border for manual edits.
+- **2026-01-05** – **🎯 PROCESS COST MANUAL OVERRIDE SYSTEM (ROOT CAUSE FIX)** – Implemented complete manual override tracking system for process costs. Added `isManualQuantity` and `isManualRate` boolean flags to `ProcessCost` type to track user edits. Modified `EstimationCalculator.calculateProcessCost()` to respect manual overrides - auto-calculation only runs when `isManualQuantity === false`, preserving user's manual values even when material/qty changes. Added visual indicators: orange border for manually edited fields, blue border for auto-calculated fields. **Setup charges completely removed** from all calculations per user requirement (amount now = quantity × rate only). This fixes the critical issue where manual edits were being overridden by formula recalculation. Files modified: `estimation.ts`, `estimation-calculator.ts`, `estimation-form.tsx`.
+- **2026-01-05** – **⚠️ ROLL DATA VALIDATION WARNINGS** – Added validation checks in `handleRollSelect()` to warn users about suspicious roll data. Displays toast warnings when: Roll Width < 100mm (suggests 100× multiplier error) or Roll GSM < 20gsm (unusually low). Helps catch data entry errors that cause incorrect material cost calculations (e.g., 12mm width → 0.004 Kg material instead of realistic values).
+- **2026-01-05** – **🔧 DIALOG RE-SELECTION FIX (DIALOG KEY PATTERN)** – Fixed issue where selection dialogs (Tool, Roll, Process, Die) would not allow re-selection after closing. Implemented "Dialog Key Pattern": added state for `toolDialogKey`, `dieDialogKey`, `rollDialogKey`, `processDialogKey` that increments on each dialog open (`setToolDialogKey(prev => prev + 1)`), forcing complete component re-mount with fresh state. Changed dialog data loading from `useEffect([open])` to `useEffect([])` to load data on mount regardless of open state.
+- **2026-01-05** – **💰 FINANCIAL PANEL REDESIGN** – Redesigned estimation Financial Summary panel for clarity. Removed GST display fields per user request. Clear hierarchy: Add. Cost → Total → Unit → Final Price (editable) → Total Order Value. Final Price is now user-controlled input field (not auto-filled), and Total Order Value auto-calculates as Final Price × Order Qty.
+- **2026-01-05** – **🌙 DARK THEME FIX** – Disabled OS dark mode detection by setting `enableSystem: false` and forced default mode to 'light' in `useTheme.tsx`. Application now always opens in light mode regardless of OS preference.
+- **2026-01-05** – **🔨 VERCEL BUILD FIX** – Removed incompatible `react-qr-reader` dependency causing React 19 conflicts (ERESOLVE error). Already had `html5-qrcode` as React 19-compatible alternative. Fixed duplicate import errors in GRN and Purchase Order pages. Added Suspense boundary for `useSearchParams` in Purchase Order create page.
 - **2026-01-03** – **📦 MATERIAL RETURN MODULE** – Implemented complete QR-based Material Return module with exact UI consistency. Features: QR scanning for Issue selection, partial return tracking, quality status, return reasons, automatic stock reversal via `grnStorage.restoreStock()`, FY-based ID generation (MR00001/25-26), full traceability to original Issue and GRN items. Created `material-return.ts`, `return-storage.ts`, `return-columns.tsx`, `return-dialog.tsx`, `return/page.tsx`. Added navigation link to sidebar.
 - **2026-01-03** – **🔍 ESTIMATION LOGIC COMPREHENSIVE AUDIT** – Performed full ERP-grade audit of estimation calculation logic from production/finance perspective. Created detailed audit reports (`estimation_audit.md`, `complete_system_analysis.md`) identifying CRITICAL production risks.
 - **2026-01-03** – **🐛 ESTIMATION CALCULATOR BUG FIXES** – Fixed missing `orderQty` multiplier in area-based rate calculations (`Rate/Sq.Inch/Color`, `Rate/Sq.Inch`, `Rate/Sq.CM`) in `src/lib/calculators/estimation-calculator.ts`. These bugs caused incorrect total cost calculations for area-based pricing.

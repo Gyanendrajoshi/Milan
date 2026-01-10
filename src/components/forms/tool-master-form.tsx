@@ -111,6 +111,15 @@ export function ToolMasterForm({ initialData, onSuccess }: ToolMasterFormProps) 
         usageCount: initialData?.usageCount || 0,
         status: initialData?.status || "Active",
         jobSize: initialData?.jobSize || "",
+
+        // Missing fields causing uncontrolled errors
+        hsnCode: initialData?.hsnCode || "",
+        purchaseUnit: initialData?.purchaseUnit || "",
+        toolDescription: initialData?.toolDescription || "",
+        colorDetails: initialData?.colorDetails || "",
+        plates: initialData?.plates || "",
+        lpi: initialData?.lpi || "",
+        bcm: initialData?.bcm || "",
     };
 
     const form = useForm<ToolMasterFormValues, any, ToolMasterSchemaType>({
@@ -157,14 +166,32 @@ export function ToolMasterForm({ initialData, onSuccess }: ToolMasterFormProps) 
 
     // Auto-generate Tool No logic
     useEffect(() => {
-        if (!initialData && toolPrefixWatcher) {
-            const selectedOption = toolPrefixOptions.find(opt => opt.value === toolPrefixWatcher);
-            if (selectedOption) {
-                // Generate code: Prefix Code + 5 random digits
-                const randomNum = Math.floor(10000 + Math.random() * 90000);
-                form.setValue("toolNo", `${selectedOption.code}${randomNum}`);
+        const generateCode = async () => {
+            if (!initialData && toolPrefixWatcher) {
+                const selectedOption = toolPrefixOptions.find(opt => opt.value === toolPrefixWatcher);
+                if (selectedOption) {
+                    const prefixCode = selectedOption.code;
+                    try {
+                        const tools = await import("@/services/api/tool-service").then(m => m.getTools());
+                        let maxId = 0;
+                        tools.forEach(t => {
+                            if (t.toolNo && t.toolNo.startsWith(prefixCode)) {
+                                const numStr = t.toolNo.substring(prefixCode.length);
+                                const num = parseInt(numStr, 10);
+                                if (!isNaN(num) && num > maxId) maxId = num;
+                            }
+                        });
+                        const nextId = maxId + 1;
+                        const nextCode = `${prefixCode}${nextId.toString().padStart(5, '0')}`;
+                        form.setValue("toolNo", nextCode);
+                    } catch (error) {
+                        console.error("Failed to generate tool no", error);
+                        form.setValue("toolNo", `${prefixCode}00001`);
+                    }
+                }
             }
-        }
+        };
+        generateCode();
     }, [toolPrefixWatcher, initialData, form]);
 
     // Auto-calculate Circumference based on No of Teeth
@@ -234,8 +261,21 @@ export function ToolMasterForm({ initialData, onSuccess }: ToolMasterFormProps) 
                 // Regenerate Tool No for Copy New
                 const selectedOption = toolPrefixOptions.find(opt => opt.value === formattedData.toolPrefix);
                 if (selectedOption) {
-                    const randomNum = Math.floor(10000 + Math.random() * 90000);
-                    formattedData.toolNo = `${selectedOption.code}${randomNum}`;
+                    const prefixCode = selectedOption.code;
+                    try {
+                        const tools = await import("@/services/api/tool-service").then(m => m.getTools());
+                        let maxId = 0;
+                        tools.forEach(t => {
+                            if (t.toolNo && t.toolNo.startsWith(prefixCode)) {
+                                const numStr = t.toolNo.substring(prefixCode.length);
+                                const num = parseInt(numStr, 10);
+                                if (!isNaN(num) && num > maxId) maxId = num;
+                            }
+                        });
+                        formattedData.toolNo = `${prefixCode}${(maxId + 1).toString().padStart(5, '0')}`;
+                    } catch {
+                        formattedData.toolNo = `${prefixCode}00001`;
+                    }
                     formattedData.itemCode = formattedData.toolNo;
                 }
             }

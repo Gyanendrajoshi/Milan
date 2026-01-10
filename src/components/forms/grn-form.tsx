@@ -192,10 +192,88 @@ export function GRNForm({ initialItems, onSuccess, onCancel, readOnly = false, e
         defaultValues,
     });
 
-    const { fields, update } = useFieldArray({
+    // --- Batch Numbering & Split Logic ---
+    const recalculateBatchNumbers = () => {
+        const currentItems = form.getValues("items");
+        const codeCounts: Record<string, number> = {};
+        const grnNumber = existingData?.grnNumber || "GRNXXXXX";
+
+        // We need to update batch numbers for ALL items to maintain sequence
+        currentItems.forEach((item, index) => {
+            if (!codeCounts[item.itemCode]) {
+                codeCounts[item.itemCode] = 0;
+            }
+            codeCounts[item.itemCode]++;
+
+            // Format: GRNNo-ItemCode-Index
+            // Use a simple index for the item code sequence
+            const batchIndex = codeCounts[item.itemCode];
+            const newBatchNo = `${grnNumber}-${item.itemCode}-${batchIndex}`;
+
+            // Only update if changed to avoid unnecessary re-renders
+            if (item.batchNo !== newBatchNo) {
+                form.setValue(`items.${index}.batchNo` as any, newBatchNo, { shouldDirty: true });
+            }
+        });
+    };
+
+    const { fields, append, insert, remove } = useFieldArray({
         control: form.control,
         name: "items",
     });
+
+    const handleSplitRow = (index: number) => {
+        const itemToClone = form.getValues(`items.${index}`);
+
+        // Create a clone with reset received quantities
+        const newItem = {
+            ...itemToClone,
+            receivedQty: 0,
+            receivedKg: 0,
+            receivedRM: 0,
+            receivedSqMtr: 0,
+            supplierBatchNo: "", // Clear supplier batch
+            // Keep keys like id, poId, itemCode etc. same to link to same PO Item
+        };
+
+        // Insert immediately after the current row
+        insert(index + 1, newItem);
+
+        // Recalculate batch numbers immediately
+        // Note: We might need a small timeout or effect if state isn't ready, 
+        // but with react-hook-form getValues() it should be fine.
+        setTimeout(recalculateBatchNumbers, 0);
+    };
+
+    const handleDeleteRow = (index: number) => {
+        remove(index);
+        setTimeout(recalculateBatchNumbers, 0);
+    };
+
+    const handleBulkSplit = (index: number, count: number) => {
+        if (count <= 1) return;
+
+        const itemToClone = form.getValues(`items.${index}`);
+
+        // Prepare copies
+        // We copy the FULL quantity so that "Same Quantity Roll" logic is satisfied.
+        // E.g. User enters 100kg, 5 rolls -> 5 rows of 100kg.
+        const copies = Array.from({ length: count - 1 }).map(() => ({
+            ...itemToClone,
+            noOfRolls: 1, // Reset count for the clones
+            supplierBatchNo: "", // Clear supplier batch
+            // Keep keys like id, poId, itemCode etc. same
+        }));
+
+        // Insert all copies after current
+        insert(index + 1, copies);
+
+        // Reset the triggering row's count to 1
+        form.setValue(`items.${index}.noOfRolls`, 1, { shouldDirty: true });
+
+        // Recalculate batches
+        setTimeout(recalculateBatchNumbers, 0);
+    };
 
     // --- 3-Unit Calculation Logic ---
     const handleValueChange = (index: number, field: "RM" | "SQM" | "KG" | "Qty", value: number) => {
@@ -254,6 +332,41 @@ export function GRNForm({ initialItems, onSuccess, onCancel, readOnly = false, e
     const onSubmit = async (data: GRNFormValues) => {
         try {
             setIsLoading(true);
+
+            // --- VALIDATION: Quantity Check (Aggregate by Item Code) ---
+            const itemTotals: Record<string, number> = {};
+            const itemMetas: Record<string, { pending: number, name: string }> = {};
+
+            data.items.forEach(item => {
+                if (!itemTotals[item.itemCode]) {
+                    itemTotals[item.itemCode] = 0;
+                    itemMetas[item.itemCode] = { pending: item.pendingQty, name: item.itemName };
+                }
+                itemTotals[item.itemCode] += (item.receivedQty || 0);
+            });
+
+            // Check if any item exceeds pending
+            for (const [code, total] of Object.entries(itemTotals)) {
+                // Allow a small tolerance (e.g. 0.01) for float errors, or maybe 1%? 
+                // Strict check for now.
+                if (total > itemMetas[code].pending) {
+                    toast.error(`Quantity Error`, {
+                        description: `Item '${itemMetas[code].name}': Total Received (${total}) exceeds Pending (${itemMetas[code].pending}).`
+                    });
+                    setIsLoading(false);
+                    return;
+                }
+            }
+
+            // Check if at least something is received
+            const totalReceived = Object.values(itemTotals).reduce((a, b) => a + b, 0);
+            if (totalReceived <= 0) {
+                toast.error("Validation Error", { description: "You must receive at least one item." });
+                setIsLoading(false);
+                return;
+            }
+            // -----------------------------------------------------------
+
             // Transform to API format
             const apiData: any = {
                 grnDate: data.grnDate.toISOString(),
@@ -338,16 +451,22 @@ export function GRNForm({ initialItems, onSuccess, onCancel, readOnly = false, e
                                 <TableHead className="h-7 p-0 px-2 text-[10px] font-bold uppercase text-gray-500 text-center w-[100px]">PO Qty</TableHead>
                                 <TableHead className="h-7 p-0 px-2 text-[10px] font-bold uppercase text-gray-500 text-center w-[50px]">Unit</TableHead>
                                 <TableHead className="h-7 p-0 px-2 text-[10px] font-bold uppercase text-gray-500 text-center w-[60px]">Pending</TableHead>
+                                <TableHead className="h-7 p-0 px-2 text-[10px] font-bold uppercase text-gray-500 text-center w-[50px] bg-blue-50/50">Rolls</TableHead>
                                 <TableHead className="h-7 p-0 px-2 text-[10px] font-bold uppercase text-gray-500 text-center w-[140px] bg-blue-50/50">Received *</TableHead>
                                 <TableHead className="h-7 p-0 px-2 text-[10px] font-bold uppercase text-gray-500 w-[120px]">Auto Batch</TableHead>
                                 <TableHead className="h-7 p-0 px-2 text-[10px] font-bold uppercase text-gray-500 w-[120px] bg-blue-50/50">Supp. Batch</TableHead>
                                 <TableHead className="h-7 p-0 px-2 text-[10px] font-bold uppercase text-gray-500 w-[120px]">Expiry *</TableHead>
                                 <TableHead className="h-7 p-0 px-2 text-[10px] font-bold uppercase text-gray-500 w-[100px]">Remark</TableHead>
+                                <TableHead className="h-7 p-0 px-2 text-[10px] font-bold uppercase text-gray-500 w-[60px] text-center">Action</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {fields.map((field, index) => {
                                 const isRoll = !!field.rollWidthMM || field.group === "Paper" || field.group === "Roll" || field.itemType === "Roll";
+                                // Count occurrences of this item to decide if delete is allowed
+                                const itemCount = fields.filter(f => f.itemCode === field.itemCode).length;
+                                const isOnlyRow = itemCount <= 1;
+
                                 return (
                                     <TableRow key={field.id} className="hover:bg-gray-50 border-b border-gray-100">
                                         <TableCell className="text-xs font-medium text-gray-700">{field.itemCode}</TableCell>
@@ -368,32 +487,16 @@ export function GRNForm({ initialItems, onSuccess, onCancel, readOnly = false, e
                                                         const width = field.rollWidthMM || 0;
                                                         const gsm = field.rollTotalGSM || 0;
 
-                                                        // Safety checks for division
-                                                        const safeWidth = width > 0 ? width : 1;
-                                                        const safeGSM = gsm > 0 ? gsm : 1;
+                                                        const fmt = (val: number) => (isFinite(val) && !isNaN(val)) ? val.toFixed(2) : "-";
 
+                                                        // Simple conversions for display
                                                         if (uom === 'kg') {
                                                             kg = qty;
-                                                            // Avoid division by zero display issues
                                                             if (gsm > 0) sqm = (kg * 1000) / gsm;
                                                             if (width > 0) rm = (sqm * 1000) / width;
-                                                        } else if (uom === 'sq. mtr' || uom === 'sqm') {
-                                                            sqm = qty;
-                                                            if (width > 0) rm = (sqm * 1000) / width;
-                                                            kg = (sqm * gsm) / 1000;
-                                                        } else if (uom === 'run. mtr' || uom === 'rm') {
-                                                            rm = qty;
-                                                            sqm = (rm * width) / 1000;
-                                                            kg = (sqm * gsm) / 1000;
                                                         } else {
-                                                            // Fallback
-                                                            kg = qty;
-                                                            if (gsm > 0) sqm = (kg * 1000) / gsm;
-                                                            if (width > 0) rm = (sqm * 1000) / width;
+                                                            kg = qty; // Fallback
                                                         }
-
-                                                        // Helper to format or show safe fallback
-                                                        const fmt = (val: number) => (isFinite(val) && !isNaN(val)) ? val.toFixed(2) : "-";
 
                                                         return (
                                                             <>
@@ -410,6 +513,18 @@ export function GRNForm({ initialItems, onSuccess, onCancel, readOnly = false, e
                                         </TableCell>
                                         <TableCell className="text-xs text-center">{field.uom}</TableCell>
                                         <TableCell className="text-xs text-center font-bold text-gray-800">{field.pendingQty}</TableCell>
+
+                                        {/* Rolls Count for auto-split */}
+                                        <TableCell className="p-1 text-center bg-blue-50/20">
+                                            <Input
+                                                type="number"
+                                                min={1}
+                                                className="h-6 w-full text-[10px] text-center bg-white border-slate-200 focus:border-blue-500 transition-colors px-1"
+                                                {...form.register(`items.${index}.noOfRolls`, { valueAsNumber: true })}
+                                                onBlur={(e) => handleBulkSplit(index, parseInt(e.target.value) || 1)}
+                                                disabled={readOnly}
+                                            />
+                                        </TableCell>
 
                                         {/* Received Column: Showing Run Mtr input for Rolls */}
                                         <TableCell className="p-2 bg-blue-50/20">
@@ -512,6 +627,33 @@ export function GRNForm({ initialItems, onSuccess, onCancel, readOnly = false, e
                                         {/* Remarks */}
                                         <TableCell>
                                             <Input className="h-6 text-[10px] bg-white border-slate-200 focus:border-blue-500 transition-colors px-1" placeholder="Optional" disabled={readOnly} />
+                                        </TableCell>
+
+                                        {/* Actions */}
+                                        <TableCell className="text-center">
+                                            <div className="flex items-center justify-center gap-1">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-6 w-6 text-blue-600 hover:bg-blue-50"
+                                                    onClick={() => handleSplitRow(index)}
+                                                    title="Split / Add Batch"
+                                                    type="button"
+                                                >
+                                                    <div className="text-lg leading-none">+</div>
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className={`h-6 w-6 ${isOnlyRow ? "text-gray-300" : "text-red-600 hover:bg-red-50"}`}
+                                                    onClick={() => !isOnlyRow && handleDeleteRow(index)}
+                                                    disabled={isOnlyRow}
+                                                    title="Remove Row"
+                                                    type="button"
+                                                >
+                                                    <Trash2 className="h-3 w-3" />
+                                                </Button>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 );

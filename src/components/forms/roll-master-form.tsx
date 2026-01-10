@@ -134,25 +134,38 @@ export function RollMasterForm({ initialData, onSuccess }: RollMasterFormProps) 
 
   // Auto-generate Item Code based on Type if creating new
   useEffect(() => {
-    if (!initialData && itemTypeWatcher) {
-      // Logic: RF for Film, RP for Paper + Random 5 digits (Simulated)
-      // In a real app, this might fetch next ID from backend or just suggest prefix
-      const prefix = itemTypeWatcher === "Film" ? "RF" : "RP";
-      // Only set if current value starts with wrong prefix or is empty
-      const currentCode = form.getValues("itemCode");
+    const generateCode = async () => {
+      if (!initialData && itemTypeWatcher) {
+        const prefix = itemTypeWatcher === "Film" ? "RF" : "RP";
 
-      if (!currentCode || (!currentCode.startsWith("RF") && !currentCode.startsWith("RP"))) {
-        // Generate a random 5 digit for demo
-        const randomNum = Math.floor(10000 + Math.random() * 90000);
-        form.setValue("itemCode", `${prefix}${randomNum} `);
-      } else if (currentCode && (currentCode.startsWith("RF") || currentCode.startsWith("RP"))) {
-        // If type switched, update prefix
-        const oldPrefix = itemTypeWatcher === "Film" ? "RP" : "RF";
-        if (currentCode.startsWith(oldPrefix)) {
-          form.setValue("itemCode", currentCode.replace(oldPrefix, prefix));
+        try {
+          const rolls = await import("@/services/api/roll-service").then(m => m.getRolls());
+          let maxId = 0;
+
+          rolls.forEach(r => {
+            if (r.itemCode && r.itemCode.startsWith(prefix)) {
+              // Extract number part: RF00001 -> 1
+              const numStr = r.itemCode.substring(prefix.length);
+              const num = parseInt(numStr, 10);
+              if (!isNaN(num) && num > maxId) {
+                maxId = num;
+              }
+            }
+          });
+
+          const nextId = maxId + 1;
+          const nextCode = `${prefix}${nextId.toString().padStart(5, '0')}`;
+
+          form.setValue("itemCode", nextCode);
+        } catch (error) {
+          console.error("Failed to generate roll code", error);
+          // Fallback if API fails
+          form.setValue("itemCode", `${prefix}00001`);
         }
       }
-    }
+    };
+
+    generateCode();
   }, [itemTypeWatcher, initialData, form]);
 
 
@@ -203,10 +216,22 @@ export function RollMasterForm({ initialData, onSuccess }: RollMasterFormProps) 
       };
 
       if (submitAction === 'create' && initialData) {
-        // Regenerate Item Code for Copy New
+        // Regenerate Item Code for Copy New (Sequential)
         const prefix = validData.itemType === "Film" ? "RF" : "RP";
-        const randomNum = Math.floor(10000 + Math.random() * 90000);
-        formattedData.itemCode = `${prefix}${randomNum}`;
+        try {
+          const rolls = await import("@/services/api/roll-service").then(m => m.getRolls());
+          let maxId = 0;
+          rolls.forEach(r => {
+            if (r.itemCode && r.itemCode.startsWith(prefix)) {
+              const numStr = r.itemCode.substring(prefix.length);
+              const num = parseInt(numStr, 10);
+              if (!isNaN(num) && num > maxId) maxId = num;
+            }
+          });
+          formattedData.itemCode = `${prefix}${(maxId + 1).toString().padStart(5, '0')}`;
+        } catch (e) {
+          formattedData.itemCode = `${prefix}00001`; // Fallback
+        }
       }
 
       if (initialData && submitAction === 'update') {

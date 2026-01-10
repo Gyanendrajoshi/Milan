@@ -1,7 +1,7 @@
 "use client"
 
 import { ColumnDef } from "@tanstack/react-table"
-import { PurchaseOrder } from "@/services/mock-data/purchase-orders"
+import { PurchaseOrder } from "@/services/api/purchase-order-service"
 import { Edit, Trash2, Printer, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { format } from "date-fns"
@@ -44,7 +44,7 @@ export const getColumns = ({ onView, onDelete, onPrint }: ColumnsProps): ColumnD
     {
         accessorKey: "supplierName",
         header: "Supplier",
-        cell: ({ row }) => <span className="font-medium text-slate-700">{row.original.supplierName}</span>,
+        cell: ({ row }) => <span className="font-medium text-slate-700">{row.original.supplierName || row.original.supplierId}</span>,
     },
     {
         accessorKey: "grandTotal",

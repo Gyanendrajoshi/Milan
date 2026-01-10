@@ -3,20 +3,25 @@ import { z } from "zod";
 
 // Shared Process Cost Schema
 export const processCostSchema = z.object({
-    processId: z.string(),
+    processId: z.coerce.string(),
     processName: z.string(),
     rateType: z.enum([
         "Per KG", "Per RM", "Per Sq.Mtr", "Per 1000 Ups", // Legacy / Standard
         "Rate/Kg", "Rate/Meter", "Rate/Running Mtr", "Rate/Sq.Meter", // Aliases
         "Rate/Color", "Rate/Sq.Inch/Color", "Rate/Sq.Inch/Unit", "Rate/Sq.Inch",
         "Rate/Unit", "Rate/1000 Units", "Rate/Job", "Rate/Order Quantity",
-        "Rate/Inch/Unit", "Rate/Sq.CM"
+        "Rate/Inch/Unit", "Rate/Sq.CM", "Printing (Advanced)"
     ]).default("Per KG"),
     quantity: z.coerce.number().min(0).default(0), // Calculated or Overridden
     rate: z.coerce.number().min(0),
     amount: z.coerce.number().min(0),
     isManualQuantity: z.boolean().optional().default(false), // Track if user manually edited quantity
     isManualRate: z.boolean().optional().default(false), // Track if user manually edited rate
+    // Advanced Printing Fields
+    baseRate: z.coerce.number().min(0).optional().default(0), // KEY FIX: Store original base rate
+    extraColorRate: z.coerce.number().min(0).optional().default(0),
+    backPrintingRate: z.coerce.number().min(0).optional().default(0),
+    debugInfo: z.string().optional()
 });
 
 export type ProcessCost = z.infer<typeof processCostSchema>;
@@ -41,20 +46,20 @@ export const estimationContentSchema = z.object({
     totalUps: z.coerce.number().min(0).default(1),
 
     // Tool Details
-    toolId: z.string().optional(),
+    toolId: z.coerce.string().optional(),
     toolTeeth: z.coerce.number().optional(),
     toolCircumferenceMM: z.coerce.number().optional(),
     toolCircumferenceInch: z.coerce.number().optional(),
-    dieId: z.string().optional(),
+    dieId: z.coerce.string().optional(),
 
     // Roll Details
-    rollId: z.string().optional(),
+    rollId: z.coerce.string().optional(),
     rollWidthMM: z.coerce.number().optional(),
     rollTotalGSM: z.coerce.number().optional(),
     rollDescription: z.string().optional(),
 
     // Processes
-    processIds: z.array(z.string()).default([]),
+    processIds: z.array(z.coerce.string()).default([]),
 
     // Requirements (Base - No Wastage)
     baseRunningMtr: z.coerce.number().min(0).default(0),
@@ -124,15 +129,15 @@ export const estimationFormSchema = z.object({
     upsAcross: z.coerce.number().min(0).default(0),
     upsAround: z.coerce.number().min(0).default(0),
     totalUps: z.coerce.number().min(0).default(0),
-    toolId: z.string().optional(),
+    toolId: z.coerce.string().optional(),
     toolTeeth: z.coerce.number().optional(),
     toolCircumferenceMM: z.coerce.number().optional(),
     toolCircumferenceInch: z.coerce.number().optional(),
-    dieId: z.string().optional(),
-    rollId: z.string().optional(),
+    dieId: z.coerce.string().optional(),
+    rollId: z.coerce.string().optional(),
     rollWidthMM: z.coerce.number().optional(),
     rollTotalGSM: z.coerce.number().optional(),
-    processIds: z.array(z.string()).default([]),
+    processIds: z.array(z.coerce.string()).default([]),
     baseRunningMtr: z.coerce.number().min(0).default(0),
     baseSqMtr: z.coerce.number().min(0).default(0),
     baseKg: z.coerce.number().min(0).default(0),

@@ -4,6 +4,8 @@ import { useMemo, useState, useEffect } from "react";
 import { DataTable } from "@/components/ui/data-table";
 import { getGRNColumns, GRNFlatItem } from "./grn-columns";
 import { grnStorage } from "@/services/grn-storage";
+import { rollStorage } from "@/services/storage/roll-storage";
+import { materialStorage } from "@/services/storage/material-storage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Printer } from "lucide-react";
@@ -60,7 +62,20 @@ export function GRNList({ onBack }: GRNListProps) {
                     poDate: item.poDate || new Date().toISOString(),
                     supplierName: grn.supplierName,
                     itemCode: item.itemCode,
-                    itemName: item.itemName,
+                    itemName: (() => {
+                        let name = item.itemName;
+                        // Fallback for missing/unknown item names using Master Data lookup
+                        if (!name || name.trim() === "" || name === "Unknown Item") {
+                            const normalizedCode = (item.itemCode || "").trim().toLowerCase();
+                            // Try Roll Master
+                            const roll = rollStorage.getAll().find(r => (r.itemCode || "").trim().toLowerCase() === normalizedCode);
+                            if (roll) return roll.itemName;
+                            // Try Material Master
+                            const material = materialStorage.getAll().find(m => (m.itemCode || "").trim().toLowerCase() === normalizedCode);
+                            if (material) return material.itemName;
+                        }
+                        return name;
+                    })(),
                     group: "Paper",
                     uom: item.uom,
                     receivedQty: item.receivedQty,

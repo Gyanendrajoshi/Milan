@@ -28,4 +28,7 @@ export interface StockItem {
 
     receivedDate: string;
     expiryDate?: string;
+
+    // QR Code (for slitting outputs)
+    qrCodeData?: string;
 }

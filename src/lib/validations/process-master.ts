@@ -1,7 +1,7 @@
 import * as z from "zod"
 
 export const processMasterSchema = z.object({
-    id: z.string().optional(),
+    id: z.coerce.string().optional(),
     name: z.string().min(2, {
         message: "Process name must be at least 2 characters.",
     }),
@@ -10,6 +10,7 @@ export const processMasterSchema = z.object({
     rate: z.coerce.number().min(0, {
         message: "Rate must be a positive number.",
     }),
+    formulaParams: z.string().nullable().optional(),
 })
 
 export type ProcessMasterFormValues = z.infer<typeof processMasterSchema>

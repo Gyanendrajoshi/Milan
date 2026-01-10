@@ -4,13 +4,12 @@ import { useState, useMemo, useEffect } from "react";
 import { useBacchaSearch } from "@/hooks/useBacchaSearch";
 import { EstimationForm } from "@/components/forms/estimation-form";
 import { Button } from "@/components/ui/button";
-import { Plus, Search } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { Plus } from "lucide-react";
 import { DataTable } from "@/components/ui/data-table";
 
 import { getEstimationColumns, Estimation } from "./estimation-columns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { storage } from "@/services/storage";
+import { getEstimations, getEstimationById, deleteEstimation } from "@/services/api/estimation-service";
 import { toast } from "sonner";
 
 export default function EstimationPage() {
@@ -18,28 +17,52 @@ export default function EstimationPage() {
     const [selectedEstimation, setSelectedEstimation] = useState<Estimation | undefined>(undefined);
 
     const [estimations, setEstimations] = useState<Estimation[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const refreshData = () => {
-        setEstimations(storage.getEstimations());
+    const refreshData = async () => {
+        setLoading(true);
+        try {
+            const data = await getEstimations();
+            setEstimations(data || []);
+        } catch (error) {
+            console.error("Failed to fetch estimations", error);
+            toast.error("Failed to load estimations");
+        } finally {
+            setLoading(false);
+        }
     };
 
-    // Load initial data
     // Load initial data
     useEffect(() => {
         refreshData();
     }, []);
 
     const columns = useMemo(() => getEstimationColumns({
-        onEdit: (data) => {
-            setSelectedEstimation(data);
-            setShowForm(true);
+        onEdit: async (data) => {
+            // Fetch full details before showing form because list view has shallow data
+            setLoading(true);
+            try {
+                // Ensure we get the full object with nested details
+                const fullData = await getEstimationById(data.id);
+                setSelectedEstimation(fullData);
+                setShowForm(true);
+            } catch (error) {
+                console.error("Failed to load details", error);
+                toast.error("Failed to load estimation details");
+            } finally {
+                setLoading(false);
+            }
         },
         onPrint: (data) => console.log("Print", data),
-        onDelete: (data) => {
+        onDelete: async (data) => {
             if (confirm(`Are you sure you want to delete ${data.jobCardNo}?`)) {
-                storage.deleteEstimation(data.id);
-                toast.success("Estimation Deleted");
-                refreshData();
+                try {
+                    await deleteEstimation(data.id);
+                    toast.success("Estimation Deleted");
+                    refreshData();
+                } catch (error) {
+                    toast.error("Failed to delete estimation");
+                }
             }
         },
     }), []);
@@ -59,7 +82,6 @@ export default function EstimationPage() {
                 <EstimationForm
                     key={selectedEstimation?.id ?? 'new'}
                     onBack={() => {
-                        setShowForm(false);
                         setShowForm(false);
                         setSelectedEstimation(undefined);
                         refreshData();
@@ -88,10 +110,11 @@ export default function EstimationPage() {
                     <DataTable
                         columns={columns}
                         data={filteredData}
-                        searchKey="jobCardNo" // Allow filtering by Job Card ID directly if needed by DataTable internals
+                        searchKey="jobCardNo"
                         searchValue={globalTerm}
                         onSearch={setGlobalSearch}
                         placeholder="Search job cards..."
+                        isLoading={loading}
                     />
                 </CardContent>
             </Card>

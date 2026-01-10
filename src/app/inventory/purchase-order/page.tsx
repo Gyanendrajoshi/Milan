@@ -22,8 +22,9 @@ import {
 import { DataTable } from "@/components/ui/data-table";
 import { getColumns } from "./columns";
 
-import { PurchaseOrder } from "../../../services/mock-data/purchase-orders";
-import { poStorage } from "@/services/po-storage";
+import { PurchaseOrder } from "@/services/api/purchase-order-service";
+// import { PurchaseOrder } from "../../../services/mock-data/purchase-orders";
+// import { poStorage } from "@/services/po-storage";
 import { toast } from "sonner";
 import { useBacchaSearch } from "@/hooks/useBacchaSearch";
 
@@ -34,8 +35,9 @@ export default function PurchaseOrderListPage() {
     const [data, setData] = React.useState<PurchaseOrder[]>([]);
 
     const loadData = () => {
-        const pos = poStorage.getAll();
-        setData(pos);
+        import("@/services/api/purchase-order-service").then(m => m.getPurchaseOrders()).then(pos => {
+            setData(pos);
+        });
     };
 
     React.useEffect(() => {
@@ -46,10 +48,18 @@ export default function PurchaseOrderListPage() {
         router.push(`/inventory/purchase-order/create?id=${po.id}`);
     };
 
-    const handleDelete = (po: PurchaseOrder) => {
-        poStorage.delete(po.id);
-        loadData();
-        toast.success("Purchase Order Deleted");
+    const handleDelete = async (po: PurchaseOrder) => {
+        if (!confirm(`Are you sure you want to delete PO ${po.poNumber}?`)) return;
+
+        try {
+            const { deletePurchaseOrder } = await import("@/services/api/purchase-order-service");
+            await deletePurchaseOrder(po.id);
+            toast.success("Purchase Order deleted successfully");
+            loadData();
+        } catch (error) {
+            console.error(error);
+            toast.error("Failed to delete Purchase Order");
+        }
     };
 
     const handlePrint = (po: PurchaseOrder) => {

@@ -1,69 +1,86 @@
 import { HSNMaster, HSNMasterFormData } from "@/types/hsn-master";
-import { hsnStorage } from "../storage/hsn-storage";
 
-// Simulate API delay
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const API_Base_URL = "http://localhost:5005/api/hsn";
 
-/**
- * Get all HSN codes
- * In production: Replace with actual API call to GET /api/hsn
- */
+// Helper to handle API response
+async function handleResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API Error: ${response.status} - ${errorText || response.statusText}`);
+  }
+  // For 204 No Content
+  if (response.status === 204) {
+    return {} as T;
+  }
+  return response.json();
+}
+
+// Helper to map Backend DTO to Frontend Model
+function mapToHSN(dto: any): HSNMaster {
+  return {
+    ...dto,
+    id: dto.hsnId.toString(), // Map hsnId -> id
+    hsnId: undefined // Remove original key if needed
+  };
+}
+
 export async function getHSNCodes(): Promise<HSNMaster[]> {
-  await delay(300);
-  return hsnStorage.getAll();
+  const response = await fetch(API_Base_URL);
+  const dtos = await handleResponse<any[]>(response);
+  return dtos.map(mapToHSN);
 }
 
-/**
- * Get an HSN code by ID
- * In production: Replace with actual API call to GET /api/hsn/{id}
- */
 export async function getHSNById(id: string): Promise<HSNMaster | null> {
-  await delay(200);
-  return hsnStorage.getById(id) || null;
+  const response = await fetch(`${API_Base_URL}/${id}`);
+  if (response.status === 404) return null;
+  const dto = await handleResponse<any>(response);
+  return mapToHSN(dto);
 }
 
-/**
- * Create a new HSN code
- * In production: Replace with actual API call to POST /api/hsn
- */
-export async function createHSN(
-  data: HSNMasterFormData
-): Promise<HSNMaster> {
-  await delay(400);
-  const newHSN = hsnStorage.save(data);
-  return newHSN;
+export async function createHSN(data: HSNMasterFormData): Promise<HSNMaster> {
+  // Ensure gstPercentage is a number
+  const payload = {
+    ...data,
+    gstPercentage: Number(data.gstPercentage)
+  };
+
+  const response = await fetch(API_Base_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const dto = await handleResponse<any>(response);
+  return mapToHSN(dto);
 }
 
-/**
- * Update an existing HSN code
- * In production: Replace with actual API call to PUT /api/hsn/{id}
- */
 export async function updateHSN(
   id: string,
   data: Partial<HSNMasterFormData>
 ): Promise<HSNMaster> {
-  await delay(400);
+  // Ensure gstPercentage is a number if present
+  const payload = {
+    ...data,
+    ...(data.gstPercentage !== undefined && { gstPercentage: Number(data.gstPercentage) })
+  };
 
-  const existing = hsnStorage.getById(id);
-  if (!existing) {
-    throw new Error("HSN not found");
-  }
-
-  const updatedHSN = hsnStorage.save({ ...existing, ...data, id });
-  return updatedHSN;
+  const response = await fetch(`${API_Base_URL}/${id}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const dto = await handleResponse<any>(response);
+  return mapToHSN(dto);
 }
 
-/**
- * Delete an HSN code
- * In production: Replace with actual API call to DELETE /api/hsn/{id}
- */
 export async function deleteHSN(id: string): Promise<void> {
-  await delay(300);
-
-  const existing = hsnStorage.getById(id);
-  if (!existing) {
-    throw new Error("HSN not found");
+  const response = await fetch(`${API_Base_URL}/${id}`, {
+    method: "DELETE",
+  });
+  if (!response.ok && response.status !== 404) {
+    throw new Error("Failed to delete HSN");
   }
-
-  hsnStorage.delete(id);
 }

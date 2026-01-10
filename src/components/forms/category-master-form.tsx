@@ -61,13 +61,31 @@ export function CategoryMasterForm({ initialData, onSuccess }: CategoryMasterFor
             setAllProcesses(procs);
 
             // Sync initial processes if editing
-            if (initialData?.processIds && initialData.processIds.length > 0) {
-                const initialSelected = procs.filter(p => initialData.processIds!.includes(p.id));
-                setSelectedProcesses(initialSelected);
+            if (initialData) {
+                // Reset form values when initialData changes
+                form.reset({
+                    name: initialData.name,
+                    description: initialData.description || "",
+                    processIds: initialData.processIds?.map(String) || [],
+                });
+
+                if (initialData.processIds && initialData.processIds.length > 0) {
+                    // Ensure we compare strings to avoid number/string mismatch
+                    const initialSelected = procs.filter(p => initialData.processIds!.map(String).includes(String(p.id)));
+                    setSelectedProcesses(initialSelected);
+                }
+            } else {
+                // Reset to empty if adding new
+                form.reset({
+                    name: "",
+                    description: "",
+                    processIds: [],
+                });
+                setSelectedProcesses([]);
             }
         };
         loadProcesses();
-    }, [initialData]);
+    }, [initialData, form]);
 
     async function onSubmit(data: CategoryMasterSchemaType) {
         setIsSubmitting(true);
@@ -89,17 +107,17 @@ export function CategoryMasterForm({ initialData, onSuccess }: CategoryMasterFor
 
     const handleProcessSelect = (ids: string[]) => {
         form.setValue("processIds", ids);
-        // Update display list
-        const selected = allProcesses.filter(p => ids.includes(p.id));
+        // Update display list - Ensure ID comparison handles string/number mismatch
+        const selected = allProcesses.filter(p => ids.includes(String(p.id)));
         setSelectedProcesses(selected);
         form.trigger("processIds"); // Manually trigger validation for processIds
     };
 
     const handleRemoveProcess = (id: string) => {
         const currentIds = form.getValues("processIds");
-        const newIds = currentIds.filter(pid => pid !== id);
+        const newIds = currentIds.filter(pid => String(pid) !== String(id));
         form.setValue("processIds", newIds);
-        setSelectedProcesses(prev => prev.filter(p => p.id !== id));
+        setSelectedProcesses(prev => prev.filter(p => String(p.id) !== String(id)));
         form.trigger("processIds"); // Manually trigger validation for processIds
     };
 

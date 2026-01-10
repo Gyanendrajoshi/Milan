@@ -14,16 +14,15 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 // Define the type for the Estimation Table Row matching user request
-// Extended to include all form fields for proper save/edit cycle
-import { EstimationFormValues } from "@/types/estimation"
+import { EstimationFormValues } from "@/types/estimation";
 
 export type Estimation = EstimationFormValues & {
-    id: string // Internal ID
-    jobCardNo: string // Display ID
-    client: string
-    clientId: string // For compatibility
-    quantity: number // Alias for orderQty (backward compatibility)
-    deliveryDate: string // String format for display
+    id: number
+    jobCardNo: string
+    clientName: string
+    clientId: string
+    orderQty: number
+    deliveryDate: string
     status: string
 }
 
@@ -40,9 +39,9 @@ export const getEstimationColumns = ({ onEdit, onPrint, onDelete }: ColumnsProps
         cell: ({ row }) => <span className="font-bold text-primary text-xs">{row.getValue("jobCardNo")}</span>,
     },
     {
-        accessorKey: "client",
+        accessorKey: "clientName",
         header: "Client",
-        cell: ({ row }) => <span className="text-foreground font-bold text-xs">{row.getValue("client")}</span>,
+        cell: ({ row }) => <span className="text-foreground font-bold text-xs">{row.getValue("clientName")}</span>,
     },
     {
         accessorKey: "jobName",
@@ -50,9 +49,9 @@ export const getEstimationColumns = ({ onEdit, onPrint, onDelete }: ColumnsProps
         cell: ({ row }) => <span className="text-muted-foreground text-xs">{row.getValue("jobName")}</span>,
     },
     {
-        accessorKey: "quantity",
+        accessorKey: "orderQty",
         header: "Quantity",
-        cell: ({ row }) => <span className="text-muted-foreground text-xs">{row.getValue("quantity")}</span>,
+        cell: ({ row }) => <span className="text-muted-foreground text-xs">{row.getValue("orderQty")}</span>,
     },
     {
         accessorKey: "deliveryDate",

@@ -22,8 +22,12 @@ import { MultiRollSelectionDialog } from "@/components/dialogs/multi-roll-select
 import { MultiMaterialSelectionDialog } from "@/components/dialogs/multi-material-selection-dialog";
 
 import { poStorage } from "@/services/po-storage";
-import { mockSuppliers } from "../../services/mock-data/suppliers";
-import { mockHSN as mockHSNs } from "../../services/mock-data/hsn";
+// import { mockSuppliers } from "../../services/mock-data/suppliers";
+// import { mockHSN as mockHSNs } from "../../services/mock-data/hsn";
+import { getSuppliers } from "@/services/api/supplier-service";
+import { getHSNCodes } from "@/services/api/hsn-service";
+import { Supplier } from "@/types/client-supplier";
+import { HSNMaster } from "@/types/hsn-master";
 import { COMPANY_PROFILE } from "../../services/mock-data/company-settings";
 import { cn } from "@/lib/utils";
 
@@ -85,13 +89,20 @@ export function PurchaseOrderForm() {
     const searchParams = useSearchParams();
     const [rollDialogOpen, setRollDialogOpen] = useState(false);
     const [materialDialogOpen, setMaterialDialogOpen] = useState(false);
+    const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+    const [hsnCodes, setHsnCodes] = useState<HSNMaster[]>([]);
+
+    useEffect(() => {
+        getSuppliers().then(setSuppliers).catch(console.error);
+        getHSNCodes().then(setHsnCodes).catch(console.error);
+    }, []);
 
     const form = useForm({
         resolver: zodResolver(poSchema),
         defaultValues: {
             // Auto-generate PO Number: PO{SEQ}-{YY}
-            // Using random seq for now, but formatted correctly
-            poNumber: `PO${Math.floor(Math.random() * 10000).toString().padStart(5, '0')}-${new Date().getFullYear().toString().slice(-2)}`,
+            // will be overwritten by effect
+            poNumber: "",
             poDate: new Date(),
             supplierId: "",
             items: [],
@@ -103,65 +114,77 @@ export function PurchaseOrderForm() {
         },
     });
 
-    // Load Data if Edit Mode
+    // Load Data if Edit Mode OR Fetch Next Number if Create Mode
     useEffect(() => {
         const id = searchParams.get("id");
         if (id) {
-            const po = poStorage.getById(id);
-            if (po) {
-                // Use ID directly for robust linking
-                const supplierId = po.supplierId || "";
-                console.log("DEBUG PO EDIT:", { poId: id, foundPO: po, resolvedSupplierId: supplierId, allSuppliers: mockSuppliers });
+            import("@/services/api/purchase-order-service")
+                .then(m => m.getPurchaseOrderById(id))
+                .then(po => {
+                    if (po) {
+                        // Use ID directly for robust linking
+                        const supplierId = po.supplierId?.toString() || "";
+                        console.log("DEBUG PO EDIT:", { poId: id, foundPO: po, resolvedSupplierId: supplierId, allSuppliers: suppliers });
 
+                        // Enrich Items causing they might lack rate/amounts in mock
+                        // Using 'any' for strict DTO -> Form mapping safely
+                        const enrichedItems = po.items.map((i: any) => {
+                            const item = i as any;
+                            // Strict type inference for Zod schema match
+                            const itemType: "Roll" | "Material" = (item.itemType || item.group) === "Roll" ? "Roll" : "Material";
 
-                // Enrich Items causing they might lack rate/amounts in mock
-                const enrichedItems = po.items.map((i: any) => {
-                    const item = i as any;
-                    // Strict type inference for Zod schema match
-                    const itemType: "Roll" | "Material" = (item.itemType || item.group) === "Roll" ? "Roll" : "Material";
+                            return {
+                                ...i,
+                                id: i.id || Math.random().toString(36).substr(2, 9), // Keep existing ID if present
+                                itemId: i.itemId?.toString(),
+                                itemCode: i.itemCode || "",
+                                itemName: i.itemName || "",
+                                itemType: itemType,
+                                rollWidthMM: item.rollWidthMM || 0,
+                                rollTotalGSM: item.rollTotalGSM || 0,
+                                qtyRunMtr: item.qtyRunMtr || 0,
+                                qtySqMtr: item.qtySqMtr || 0,
+                                qtyKg: item.qtyKg || item.orderedQty || 0, // Fallback to orderedQty
+                                qtyUnit: item.qtyUnit || item.orderedQty || 0,
+                                rate: item.rate || 0,
+                                basicAmount: item.basicAmount || 0,
+                                taxAmount: item.taxAmount || 0,
+                                cgstAmt: item.cgstAmt || 0,
+                                sgstAmt: item.sgstAmt || 0,
+                                igstAmt: item.igstAmt || 0,
+                                totalAmount: item.totalAmount || 0,
+                                rateType: item.rateType || (item.uom === "Kg" ? "KG" : "Unit"),
+                                reqDate: item.reqDate ? new Date(item.reqDate) : undefined,
+                                hsnCode: item.hsnCode || "",
+                                gstPercent: item.gstPercent || 0,
+                                remark: item.remark || "",
+                            };
+                        });
 
-                    return {
-                        ...i,
-                        id: i.id || Math.random().toString(36).substr(2, 9), // Keep existing ID if present
-                        itemId: i.id,
-                        itemCode: i.itemCode || "",
-                        itemName: i.itemName || "",
-                        itemType: itemType,
-                        rollWidthMM: item.rollWidthMM || 0,
-                        rollTotalGSM: item.rollTotalGSM || 0,
-                        qtyRunMtr: item.qtyRunMtr || 0,
-                        qtySqMtr: item.qtySqMtr || 0,
-                        qtyKg: item.qtyKg || item.orderedQty || 0, // Fallback to orderedQty
-                        qtyUnit: item.qtyUnit || item.orderedQty || 0,
-                        rate: item.rate || 0,
-                        basicAmount: item.basicAmount || 0,
-                        taxAmount: item.taxAmount || 0,
-                        cgstAmt: item.cgstAmt || 0,
-                        sgstAmt: item.sgstAmt || 0,
-                        igstAmt: item.igstAmt || 0,
-                        totalAmount: item.totalAmount || 0,
-                        rateType: item.uom === "Kg" ? "KG" : "Unit", // Align with getCalculatedItem 'KG' check
-                        reqDate: item.reqDate ? new Date(item.reqDate) : undefined,
-                        hsnCode: item.hsnCode || "",
-                        gstPercent: item.gstPercent || 0,
-                        remark: item.remark || "",
-                    };
+                        const formData = {
+                            ...po,
+                            supplierId, // Injected as string
+                            poDate: new Date(po.poDate),
+                            items: enrichedItems,
+                            // Ensure numeric fields are preserved
+                            grandBasic: po.grandBasic,
+                            grandTax: po.grandTax,
+                            grandTotal: po.grandTotal
+                        };
+
+                        // @ts-ignore - mismatch in partial form data vs strict schema is okay here
+                        form.reset(formData);
+                    }
+                })
+                .catch(err => console.error("Failed to load PO:", err));
+        } else {
+            import("@/services/api/purchase-order-service")
+                .then(m => m.getNextPONumber())
+                .then(num => {
+                    if (num) form.setValue("poNumber", num);
                 });
-
-                const formData = {
-                    ...po,
-                    supplierId, // Injected
-                    poDate: new Date(po.poDate),
-                    items: enrichedItems,
-                    grandBasic: 0, // Recalc needed? Or trust mock? Mock has grandTotal but not breakdown.
-                    grandTax: 0,
-                    grandTotal: po.grandTotal
-                };
-
-                form.reset(formData);
-            }
         }
-    }, [searchParams, form]);
+    }, [searchParams, form, suppliers]); // Added suppliers to dep if strictly needed, but mainly waiting for id logic
 
     const { fields, append, remove, update } = useFieldArray({
         control: form.control,
@@ -181,9 +204,11 @@ export function PurchaseOrderForm() {
     const getCalculatedItem = (item: any) => {
         if (!item) return { basicAmt: 0, cgst: 0, sgst: 0, igst: 0, taxAmt: 0, totalAmt: 0 };
 
-        const selectedSupplier = mockSuppliers.find(s => s.id === watchSupplierId);
-        const supplierState = selectedSupplier?.state || HOST_STATE;
-        const isInterState = supplierState !== HOST_STATE;
+        const selectedSupplier = suppliers.find(s => s.id === watchSupplierId);
+        // Case-insensitive State Comparison for robustness
+        const supplierState = (selectedSupplier?.state || HOST_STATE).toLowerCase();
+        const hostState = HOST_STATE.toLowerCase();
+        const isInterState = supplierState !== hostState;
 
         const billingQty = item.itemType === "Roll"
             ? (item.rateType === "KG" ? item.qtyKg : item.rateType === "Sq.Mtr" ? item.qtySqMtr : item.qtyRunMtr) || 0
@@ -192,7 +217,8 @@ export function PurchaseOrderForm() {
         const basicAmt = (billingQty * (item.rate || 0));
         let gst = item.gstPercent || 0;
         if (!gst && item.hsnCode) {
-            const hsn = mockHSNs.find(h => h.hsnCode === item.hsnCode);
+            // Updated to use Real HSN State List
+            const hsn = hsnCodes.find(h => h.hsnCode === item.hsnCode);
             if (hsn) gst = hsn.gstPercentage;
         }
         const taxAmt = (basicAmt * gst) / 100;
@@ -260,15 +286,25 @@ export function PurchaseOrderForm() {
     };
 
     const handleAddRolls = (rolls: any[]) => {
-        const hsnMap = new Map(mockHSNs.map(h => [h.hsnCode, h.gstPercentage]));
+        const hsnMap = new Map(hsnCodes.map(h => [h.hsnCode, h.gstPercentage]));
 
         const newItems = rolls.map(r => {
             const gst = hsnMap.get(r.hsnCode) || 0;
+
+            // User Logic: For Rolls, constructing Item Name from "Mfg Name (Supplier Code) + Quality"
+            // because standard Item Name might be empty/generic.
+            let displayName = r.itemName;
+            // Prefer Mfg + Quality if available
+            if (r.supplierItemCode || r.quality) {
+                displayName = `${r.supplierItemCode || ""} ${r.quality || ""}`.trim();
+            }
+            if (!displayName) displayName = "Unknown Roll";
+
             return {
                 id: Math.random().toString(36).substr(2, 9),
                 itemId: r.id,
                 itemCode: r.itemCode || "UNKNOWN", // Safety fallback
-                itemName: r.itemName || "Unknown Item",
+                itemName: displayName,
                 itemType: "Roll" as const,
                 rollWidthMM: r.rollWidthMM || 0,
                 rollTotalGSM: r.totalGSM || 0,
@@ -289,7 +325,7 @@ export function PurchaseOrderForm() {
     };
 
     const handleAddMaterials = (materials: any[]) => {
-        const hsnMap = new Map(mockHSNs.map(h => [h.hsnCode, h.gstPercentage]));
+        const hsnMap = new Map(hsnCodes.map(h => [h.hsnCode, h.gstPercentage]));
 
         const newItems = materials.map(m => {
             const gst = hsnMap.get(m.hsnCode) || 0;
@@ -313,7 +349,7 @@ export function PurchaseOrderForm() {
         append(newItems);
     };
 
-    const onSubmit = (data: POFormValues) => {
+    const onSubmit = async (data: POFormValues) => {
         try {
             // Validation: Check for duplicate PO Number (exclude current PO if editing)
             const currentId = searchParams.get("id");
@@ -352,52 +388,17 @@ export function PurchaseOrderForm() {
                 ).toFixed(2))
             };
 
-            // Transform to PO storage format
-            const selectedSupplier = mockSuppliers.find(s => s.id === finalData.supplierId);
+            // Transform to PO storage format (Backend expects DTO structure handled by service)
+            // But we pass the raw form data combined with calculated values to the service
             const poData = {
                 ...finalData,
-                poDate: finalData.poDate.toISOString().split('T')[0],
-                supplierName: selectedSupplier?.supplierName || "",
-                status: "Pending" as const,
-                items: finalData.items.map(item => {
-                    const orderedQty = item.itemType === "Roll" ? (item.qtyKg || 0) : (item.qtyUnit || 0);
-                    return {
-                        id: item.id,
-                        itemId: item.itemId,
-                        itemCode: item.itemCode,
-                        itemName: item.itemName,
-                        group: item.itemType,
-                        uom: item.rateType,
-                        orderedQty: orderedQty,
-                        receivedQty: 0,
-                        pendingQty: orderedQty,
-                        rate: item.rate,
-                        rateType: item.rateType,
-                        basicAmount: item.basicAmount,
-                        taxAmount: item.taxAmount,
-                        totalAmount: item.totalAmount,
-                        hsnCode: item.hsnCode,
-                        gstPercent: item.gstPercent,
-                        cgstAmt: item.cgstAmt,
-                        sgstAmt: item.sgstAmt,
-                        igstAmt: item.igstAmt,
-                        rollWidthMM: item.rollWidthMM,
-                        rollTotalGSM: item.rollTotalGSM,
-                        // Save all quantity fields for edit mode
-                        qtyRunMtr: item.qtyRunMtr,
-                        qtySqMtr: item.qtySqMtr,
-                        qtyKg: item.qtyKg,
-                        qtyUnit: item.qtyUnit,
-                        reqDate: item.reqDate,
-                        remark: item.remark,
-                        purchaseUnit: item.rateType,
-                        purchaseRate: item.rate
-                    };
-                })
+                // Ensure dates are strings if needed, or service handles it. 
+                // Service expects: poNumber, poDate (string/iso), supplierId, etc.
+                supplierId: finalData.supplierId,
             };
 
-            // Save to storage
-            const savedPO = poStorage.save(poData);
+            // Call API
+            const savedPO = await import("@/services/api/purchase-order-service").then(m => m.createPurchaseOrder(poData));
 
             console.log("PO Saved:", savedPO);
             toast.success("Purchase Order Created Successfully", {
@@ -488,7 +489,7 @@ export function PurchaseOrderForm() {
                                 <div className="flex gap-2 text-[10px] opacity-90 print:opacity-100 print:text-xs">
                                     <span className="bg-white/20 px-2 py-0.5 rounded print:bg-transparent print:border print:border-gray-300">Host State: {HOST_STATE}</span>
                                     <span className="bg-white/20 px-2 py-0.5 rounded print:bg-transparent print:border print:border-gray-300">
-                                        Supplier State: {mockSuppliers.find(s => s.id === form.watch("supplierId"))?.state || "N/A"}
+                                        Supplier State: {suppliers.find(s => s.id === form.watch("supplierId"))?.state || "N/A"}
                                     </span>
                                 </div>
                             </div>
@@ -533,7 +534,7 @@ export function PurchaseOrderForm() {
                                                         </SelectTrigger>
                                                     </FormControl>
                                                     <SelectContent>
-                                                        {mockSuppliers.map((s) => (
+                                                        {suppliers.map((s) => (
                                                             <SelectItem key={s.id} value={s.id} className="text-xs">{s.supplierName}</SelectItem>
                                                         ))}
                                                     </SelectContent>
@@ -541,7 +542,7 @@ export function PurchaseOrderForm() {
                                             </div>
                                             {/* Print-only Text */}
                                             <div className="hidden print:block text-xs font-bold pt-1">
-                                                {mockSuppliers.find(s => s.id === field.value)?.supplierName || ""}
+                                                {suppliers.find(s => s.id === field.value)?.supplierName || ""}
                                             </div>
                                             <FormMessage />
                                         </FormItem>
